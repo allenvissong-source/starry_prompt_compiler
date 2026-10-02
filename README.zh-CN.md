@@ -4,7 +4,7 @@
 
 > 从 Starry 抽取的纯 Dart 提示词编译器——把角色对话的上下文，确定性地编译成可直接发送的消息序列。
 
-**状态**：`0.1.0-dev` · `publish_to: none` · 仅依赖 `intl` + `meta`。
+**状态**：`0.1.1-dev` · `publish_to: none` · 仅依赖 `intl` + `meta`。
 
 `starry_prompt_compiler` 是 Starry 端上提示词流水线的纯 Dart 内核。给定一份**已解析好的**对话上下文，它把这份上下文确定性地编译成一份有序、可直接发送给模型的消息序列。
 
