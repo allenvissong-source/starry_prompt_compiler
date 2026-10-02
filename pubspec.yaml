@@ -5,7 +5,7 @@ description: >-
   Contains the three-step assembly seam
   (buildPlan -> admitWorldInfoUnits -> buildFromExecutionPlan)
   plus MacroService / RegexService / WorldInfoMatcher.
-version: 0.1.0-dev
+version: 0.1.1
 publish_to: none
 
 environment:
