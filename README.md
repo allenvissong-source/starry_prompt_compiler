@@ -5,7 +5,7 @@
 > Pure-Dart prompt compiler extracted from Starry — deterministically compiles
 > character-chat context into a ready-to-send message sequence.
 
-**Status**: `0.1.0-dev` · `publish_to: none` · depends only on `intl` + `meta`.
+**Status**: `0.1.1-dev` · `publish_to: none` · depends only on `intl` + `meta`.
 
 `starry_prompt_compiler` is the pure-Dart core of Starry's on-device prompt
 pipeline. Given an **already-resolved** conversation context, it deterministically
