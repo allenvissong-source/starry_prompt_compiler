@@ -5,9 +5,9 @@ import '../models/prompt_manager.dart';
 
 /// V1 to V2 prompt block conversion.
 ///
-/// Implements `docs/prompt_compiler/compat_matrix_v1_v2.md`: §2 field mapping,
-/// §3 the 15 `core:*` kind mappings, §4 the verbatim placement copy, §5 the
-/// `isMarker` drop, §7 unknown-key passthrough into `extensions.legacy_v1`.
+/// Implements the V1->V2 rules in `openspec/specs/prompt-block-schema/spec.md`:
+/// field mapping, the 15 `core:*` kind mappings, verbatim placement copy, the
+/// `isMarker` drop, and unknown-key passthrough into `extensions.legacy_v1`.
 ///
 /// The conversion is deliberately **per-block and pure**. That is safe only
 /// because §4 was corrected first: `placement` now restates V1's input fields

@@ -1,7 +1,7 @@
 /// V2 prompt block shape.
 ///
-/// Mirrors `docs/prompt_compiler/schema/prompt_block_v2.schema.json` and the
-/// field mapping in `docs/prompt_compiler/compat_matrix_v1_v2.md`.
+/// Mirrors the prompt-block schema and its V1->V2 field mapping in
+/// `openspec/specs/prompt-block-schema/spec.md`.
 ///
 /// Two properties of this shape are load-bearing and easy to erode, so they are
 /// stated here rather than left to the schema file:
@@ -296,7 +296,8 @@ class PromptBlock {
 
 /// The fifteen built-in kind names, bare.
 ///
-/// `core:` is a reserved namespace (`prompt_block_v2_schema.md` section 2), so
+/// `core:` is a reserved namespace (see
+/// `openspec/specs/prompt-block-schema/spec.md`), so
 /// only these fifteen may carry it. Held as bare names because both the wire
 /// format and the V1 enum spell them that way.
 const Set<String> kCorePromptBlockKindNames = <String>{
@@ -319,8 +320,7 @@ const Set<String> kCorePromptBlockKindNames = <String>{
 
 /// Resolves a raw `kind` string to its V2 form.
 ///
-/// Three cases, per `prompt_block_v2_schema.md` section 2 and
-/// `compat_matrix_v1_v2.md` section 3:
+/// Three cases, per `openspec/specs/prompt-block-schema/spec.md`:
 ///
 /// * A bare name that IS one of the fifteen built-ins gains the `core:`
 ///   namespace.
