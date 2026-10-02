@@ -154,6 +154,36 @@ void main() {
     });
   });
 
+  group('SessionPromptContext.updatedAt', () {
+    // `updated_at` is epoch seconds, not an ISO string. fromJson must materialize
+    // it as a UTC instant, and toJson must project toUtc before emitting seconds,
+    // so ordering/comparison never depends on the reader zone.
+    Map<String, dynamic> json() =>
+        SessionPromptContext(updatedAt: localAt()).toJson();
+
+    test('a non-UTC updatedAt round-trips through epoch seconds as UTC', () {
+      expect(json()['updated_at'], isA<int>());
+      final restored = SessionPromptContext.fromJson(json());
+
+      expect(restored.updatedAt, isNotNull);
+      expect(restored.updatedAt!.isUtc, isTrue);
+      expect(
+        restored.updatedAt!.isAtSameMomentAs(localAt()),
+        isTrue,
+        reason: 'epoch-seconds round trip must preserve the instant',
+      );
+    });
+
+    test('fromJson on a raw epoch-seconds int yields a UTC instant', () {
+      final seconds = localAt().millisecondsSinceEpoch ~/ 1000;
+      final restored = SessionPromptContext.fromJson({'updated_at': seconds});
+
+      expect(restored.updatedAt, isNotNull);
+      expect(restored.updatedAt!.isUtc, isTrue);
+      expect(restored.updatedAt!.isAtSameMomentAs(localAt()), isTrue);
+    });
+  });
+
   // The two already-normalized models (`Character` in character_entities.dart,
   // `Worldbook` in worldbook_entities.dart) are NOT re-asserted here: both have
   // 16+ required constructor fields, and a fixture that large would assert more

@@ -119,9 +119,15 @@ class SessionPromptContext {
             )
           : const AuthorNotePolicy(),
       activeWorldbookIds: ids,
+      // `updated_at` is epoch seconds: an absolute instant. Materialize it as a
+      // UTC DateTime so callers comparing/ordering it never see a local-zone
+      // representation, and so toJson projects the same instant.
       updatedAt: updatedAtSeconds == null
           ? null
-          : DateTime.fromMillisecondsSinceEpoch(updatedAtSeconds * 1000),
+          : DateTime.fromMillisecondsSinceEpoch(
+              updatedAtSeconds * 1000,
+              isUtc: true,
+            ),
       sessionVariables: sessionVariables,
       sessionDisableOverlay: _overlayFromJson(json['session_disable_overlay']),
       characterDisableOverlay: _overlayFromJson(
@@ -212,7 +218,7 @@ class SessionPromptContext {
     'character_disable_overlay': _overlayToJson(characterDisableOverlay),
     if (sessionVariables.isNotEmpty) 'session_variables': sessionVariables,
     if (updatedAt != null)
-      'updated_at': updatedAt!.millisecondsSinceEpoch ~/ 1000,
+      'updated_at': updatedAt!.toUtc().millisecondsSinceEpoch ~/ 1000,
   };
 
   static Map<String, dynamic> _map(dynamic raw) {
