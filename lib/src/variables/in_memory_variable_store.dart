@@ -162,8 +162,15 @@ class InMemoryVariableStore extends VariableStore {
           return jsonEncode(v);
         }
         value = v;
-      } on Object {
-        // Return as-is if parsing fails.
+      } on Object catch (e) {
+        // The indexed value is not JSON-decodable / indexable; return it
+        // as-is rather than failing the whole read. This only opens an
+        // observable, injectable diagnostic exit -- the pass-through result
+        // below is unchanged.
+        _logger.warn(
+          'InMemoryVariableStore: indexed read coercion failed for '
+          'index "$index"; returning value as-is: $e',
+        );
       }
     }
 

@@ -20,9 +20,11 @@ class VariableEngine {
        _logger = logger;
 
   final VariableStore _store;
-  // Reserved for future diagnostic hooks (e.g. logging swallowed decode
-  // errors). Kept in the constructor so callers can wire it up now.
-  // ignore: unused_field
+  // Diagnostic exit for degraded paths (array-add that falls back to
+  // number/concat when the stored value is not a JSON list). Defaults to
+  // [NoopLogger]; hosts inject whatever sink they want, and
+  // `test/degradation_diagnostics_test.dart` pins the behavior with a
+  // capturing `CallbackLogger`.
   final Logger _logger;
 
   // ==================== Resolution ====================
@@ -56,8 +58,15 @@ class VariableEngine {
         _store.setGlobal(name, jsonEncode(parsed));
         return parsed;
       }
-    } on Object {
-      // Not an array
+    } on Object catch (e) {
+      // Not an array: the stored value is not JSON-decodable as a list, so the
+      // add falls through to the number/concat path below. Surface the decode
+      // failure through the injected logger instead of swallowing it silently;
+      // the fallback result below is unchanged.
+      _logger.warn(
+        'VariableEngine: global "$name" is not a JSON list; '
+        'add falls back to number/concat: $e',
+      );
     }
 
     // Try to handle as number
@@ -93,8 +102,13 @@ class VariableEngine {
         _store.setLocal(chatId, name, jsonEncode(parsed));
         return parsed;
       }
-    } on Object {
-      // Not an array
+    } on Object catch (e) {
+      // Not an array: see the global path. The fallback result below is
+      // unchanged; this only opens an observable, injectable diagnostic exit.
+      _logger.warn(
+        'VariableEngine: local "$name" is not a JSON list; '
+        'add falls back to number/concat: $e',
+      );
     }
 
     final increment = value is num ? value : double.tryParse(value.toString());
