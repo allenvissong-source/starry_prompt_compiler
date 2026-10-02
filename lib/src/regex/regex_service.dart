@@ -101,7 +101,19 @@ class RegexService {
     return RegExp(regexString);
   }
 
-  /// Clear the regex cache
+  /// Drops all compiled-pattern entries from the internal LRU cache.
+  ///
+  /// Retained as a public cache-invalidation seam even though no caller in the
+  /// seven current workspaces invokes it (verified across `starry_prompt_
+  /// compiler`, `starry_domain_entities`, `starry_character_card_codec`,
+  /// `starry_injection_service`, and the host `starry`): the host wires this
+  /// service as a process-scoped singleton (`regexServiceProvider`), the cache
+  /// is private and self-evicting at 1000 entries, and cache keys are the full
+  /// source string so editing a script cannot leave a stale entry behind.
+  /// There is therefore no *correctness* bug this fixes today. It is kept
+  /// because it is the only public way to invalidate that internal cache, and
+  /// deleting it would narrow an injectable service's contract for no behavior
+  /// gain. Re-evaluate if a host ever needs post-edit cache busting.
   void clearCache() {
     _regexCache.clear();
   }

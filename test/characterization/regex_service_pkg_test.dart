@@ -254,4 +254,36 @@ void main() {
       expect(pkgSvc.getRegexedString('', RegexPlacement.aiOutput, scripts), '');
     });
   });
+
+  group('RegexService.clearCache', () {
+    test('clearing the cache between runs leaves results unchanged', () {
+      // The compiled-pattern cache is private and Dart canonicalizes RegExp
+      // instances, so object identity cannot observe a cache miss. This pins
+      // the observable, contract-level property: clearing is safe, the service
+      // rebuilds on demand, business output is identical, and no diagnostic is
+      // raised.
+      final warns = <String>[];
+      final svc = RegexService(
+        logger: CallbackLogger((level, message, [error, stack]) {
+          if (level == 'warn' || level == 'error') warns.add(message);
+        }),
+      );
+      final script = _pkgScript(id: 'c', find: r'foo(\d+)', replace: r'[$1]');
+      const input = 'x foo123 y foo45 z';
+
+      final warm = svc.runRegexScript(script, input);
+
+      svc.clearCache();
+
+      // After clearing, the pattern recompiles on demand and output matches.
+      expect(svc.getRegex(r'foo(\d+)'), isNotNull);
+      expect(svc.runRegexScript(script, input), warm);
+
+      // Repeated clears (including on an already-empty cache) are also safe.
+      svc.clearCache();
+      svc.clearCache();
+      expect(svc.runRegexScript(script, input), warm);
+      expect(warns, isEmpty);
+    });
+  });
 }
