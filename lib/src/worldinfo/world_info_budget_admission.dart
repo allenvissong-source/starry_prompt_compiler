@@ -21,11 +21,14 @@ class WorldInfoBudgetAdmissionResult {
 class WorldInfoBudgetAdmissionService {
   const WorldInfoBudgetAdmissionService();
 
-  WorldInfoBudgetAdmissionResult admitWorldInfoUnits(PromptExecutionPlan plan) {
+  WorldInfoBudgetAdmissionResult admitWorldInfoUnits(
+    PromptExecutionPlan plan, {
+    Map<String, int> worldbookTokenBudgets = const <String, int>{},
+  }) {
     final wiBudget = plan.worldInfoBudgetPlan.resolveBudgetTokens(
       plan.budgetPlan.resolvedAvailableInputTokens,
     );
-    if (!plan.worldInfoBudgetPlan.enabled || wiBudget == null) {
+    if (wiBudget == null && worldbookTokenBudgets.isEmpty) {
       return WorldInfoBudgetAdmissionResult(
         plan: plan,
         trace: const <CroppingTrace>[],
@@ -49,18 +52,34 @@ class WorldInfoBudgetAdmissionService {
     ]..sort(_compareWorldInfoBudgetPriority);
 
     var remaining = wiBudget;
+    final bookRemaining = <String, int>{
+      for (final entry in worldbookTokenBudgets.entries)
+        entry.key: entry.value < 0 ? 0 : entry.value,
+    };
     final trace = <CroppingTrace>[];
     final retainedWorldInfoIds = <String>{};
     for (final unit in wiUnits) {
-      final decision = _admitWorldInfoUnit(unit, remainingBudget: remaining);
+      final bookBudget = bookRemaining[unit.sourceRef];
+      final limit = remaining == null
+          ? bookBudget
+          : bookBudget == null || remaining < bookBudget
+          ? remaining
+          : bookBudget;
+      final decision = _admitWorldInfoUnit(unit, remainingBudget: limit);
       trace.addAll(decision.trace);
       if (decision.retained) {
         retainedWorldInfoIds.add(unit.id);
         if (!unit.ignoreBudget) {
-          remaining =
-              ((remaining - decision.estimatedTokens).clamp(0, remaining)
-                      as num)
-                  .toInt();
+          if (remaining != null) {
+            remaining = (remaining - decision.estimatedTokens).clamp(
+              0,
+              remaining,
+            );
+          }
+          if (bookBudget != null) {
+            bookRemaining[unit.sourceRef] =
+                (bookBudget - decision.estimatedTokens).clamp(0, bookBudget);
+          }
         }
       }
     }
@@ -116,7 +135,7 @@ class WorldInfoBudgetAdmissionService {
   ({bool retained, int estimatedTokens, List<CroppingTrace> trace})
   _admitWorldInfoUnit(
     ResolvedExecutionUnit unit, {
-    required int remainingBudget,
+    required int? remainingBudget,
   }) {
     if (unit.sourceKind != ExecutionSourceKind.worldInfoEntry) {
       return (
@@ -141,7 +160,7 @@ class WorldInfoBudgetAdmissionService {
         ],
       );
     }
-    if (estimated <= remainingBudget) {
+    if (remainingBudget == null || estimated <= remainingBudget) {
       return (
         retained: true,
         estimatedTokens: estimated,

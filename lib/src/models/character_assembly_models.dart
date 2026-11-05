@@ -108,6 +108,7 @@ class ResolvedPromptContext {
     required Map<String, dynamic> resolvedVariables,
     List<String> worldInfoCandidateIds = const <String>[],
     this.worldInfoContextText = '',
+    Map<String, int> worldbookTokenBudgets = const <String, int>{},
     this.persona,
     this.promptProfile,
     this.regexProfile,
@@ -124,6 +125,9 @@ class ResolvedPromptContext {
          resolvedPromptBlocks,
        ),
        worldInfoCandidateIds = List<String>.unmodifiable(worldInfoCandidateIds),
+       worldbookTokenBudgets = Map<String, int>.unmodifiable(
+         worldbookTokenBudgets,
+       ),
        resolvedVariables = _deepFreezeMap(resolvedVariables);
 
   final Character character;
@@ -142,6 +146,7 @@ class ResolvedPromptContext {
   final SessionPromptContext promptContext;
   final List<String> worldInfoCandidateIds;
   final String worldInfoContextText;
+  final Map<String, int> worldbookTokenBudgets;
   final Persona? persona;
   final PromptProfileResource? promptProfile;
   final RegexProfileBundle? regexProfile;

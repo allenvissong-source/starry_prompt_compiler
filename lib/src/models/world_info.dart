@@ -197,6 +197,7 @@ class WorldInfoRuntimePolicy {
 class WorldInfoMatchContext {
   const WorldInfoMatchContext({
     this.history = '',
+    this.historyMessages,
     this.personaDescription = '',
     this.characterDescription = '',
     this.characterPersonality = '',
@@ -207,6 +208,10 @@ class WorldInfoMatchContext {
   });
 
   final String history;
+
+  /// Ordered message text, including the pending user message. A flattened
+  /// external context may omit this when it has no message boundaries.
+  final List<String>? historyMessages;
   final String personaDescription;
   final String characterDescription;
   final String characterPersonality;
@@ -217,13 +222,25 @@ class WorldInfoMatchContext {
 
   String get mergedText => scopedText();
 
-  String scopedText([List<WorldInfoScanSource> sources = const []]) {
+  String scopedText([
+    List<WorldInfoScanSource> sources = const [],
+    int? historyDepth,
+  ]) {
     final scopedSources = sources.isEmpty
         ? WorldInfoScanSource.values
         : sources;
     final buffer = StringBuffer();
     for (final source in scopedSources) {
-      final value = valueFor(source);
+      final messages = historyMessages;
+      final value = source == WorldInfoScanSource.history && messages != null
+          ? (historyDepth == null
+                    ? messages
+                    : messages.skip(
+                        (messages.length -
+                            historyDepth.clamp(0, messages.length)),
+                      ))
+                .join('\n')
+          : valueFor(source);
       if (value.trim().isEmpty) continue;
       if (buffer.isNotEmpty) buffer.writeln();
       buffer.write(value);
@@ -333,7 +350,7 @@ class WorldInfoEntry {
       excludeRecursion: entry.excludeRecursion,
       delayUntilRecursion: entry.delayUntilRecursion,
       delayUntilRecursionLevel: policy.activation.delayLevel,
-      scanDepth: entry.entryScanDepth ?? 0,
+      scanDepth: entry.entryScanDepth,
       role: entry.role,
       sticky: entry.sticky,
       cooldown: entry.cooldown,
@@ -399,7 +416,9 @@ class WorldInfoEntry {
   /// guarantees a level implies the gate, but this layer does not depend on that:
   /// a level without a gate has no meaning, so the boolean always decides.
   final int? delayUntilRecursionLevel;
-  final int scanDepth;
+
+  /// Null inherits the book's depth; zero scans no history messages.
+  final int? scanDepth;
   final int role;
   final int sticky;
   final int cooldown;
@@ -471,12 +490,14 @@ class WorldInfoResolution {
     required this.groupedEntries,
     required this.candidateWorldInfoIds,
     required this.contextText,
+    this.worldbookTokenBudgets = const <String, int>{},
   });
 
   final List<WorldInfoEntry> entries;
   final Map<WorldInfoPosition, List<WorldInfoEntry>> groupedEntries;
   final List<String> candidateWorldInfoIds;
   final String contextText;
+  final Map<String, int> worldbookTokenBudgets;
 }
 
 Map<String, dynamic> _map(dynamic raw) {

@@ -21,6 +21,7 @@
 import 'dart:collection';
 
 import '../models/world_info.dart';
+import '../models/worldbook_entities.dart';
 import 'text_recall.dart';
 
 /// Why an entry entered the match set.
@@ -167,19 +168,13 @@ class WorldInfoMatcher {
   /// Production paths use [findMatchingEntriesWithMetadata], where recall always
   /// runs.
   ///
-  /// One exception, because the line above reads as a guarantee: the Flutter
-  /// host currently calls *this* method (`world_info_providers.dart`), so recall
-  /// does not run on that path -- `keywordOnlyBaseline` carries`maxCandidates: 0`,
-  /// which short-circuits the recall stage. `starry_injection_service` is the only
-  /// caller on the metadata variant today. Moving the host across is a host-side
-  /// change; do not `fix` it by folding recall in here, which would rewrite the
-  /// goldens named above.
   List<WorldInfoEntry> findMatchingEntries({
     required WorldInfoMatchContext context,
     required List<WorldInfoEntry> entries,
     required String characterId,
     required List<String> characterTags,
     int maxRecursionDepth = 3,
+    Map<String, Worldbook> worldbooks = const <String, Worldbook>{},
     String? generationTrigger,
   }) {
     return findMatchingEntriesWithMetadata(
@@ -188,6 +183,7 @@ class WorldInfoMatcher {
       characterId: characterId,
       characterTags: characterTags,
       maxRecursionDepth: maxRecursionDepth,
+      worldbooks: worldbooks,
       generationTrigger: generationTrigger,
       recall: WorldInfoRecallOptions.keywordOnlyBaseline,
     ).map((match) => match.entry).toList(growable: false);
@@ -202,13 +198,32 @@ class WorldInfoMatcher {
     required String characterId,
     required List<String> characterTags,
     int maxRecursionDepth = 3,
+    Map<String, Worldbook> worldbooks = const <String, Worldbook>{},
     String? generationTrigger,
     WorldInfoRecallOptions recall = WorldInfoRecallOptions.standard,
   }) {
     final allMatched = <WorldInfoMatch>[];
     final processedIds = <String>{};
-    var currentContext = context.mergedText;
+    final cascade = <String>[];
     var recursionDepth = 0;
+    final recursionLimit = worldbooks.isEmpty
+        ? maxRecursionDepth
+        : entries.fold<int>(0, (depth, entry) {
+            final book = worldbooks[entry.worldbookId];
+            final limit = book == null
+                ? maxRecursionDepth
+                : book.recursiveScanning
+                ? book.maxRecursionDepth
+                : 0;
+            return limit > depth ? limit : depth;
+          });
+    final scanText = <String, String>{
+      for (final entry in entries)
+        entry.id: context.scopedText(
+          entry.runtimePolicy.targeting.scanSources,
+          entry.scanDepth ?? worldbooks[entry.worldbookId]?.scanDepth,
+        ),
+    };
 
     // Delay levels open one at a time, lowest first, mirroring SillyTavern's
     // `availableRecursionDelayLevels`. Deduplicated and sorted so the order is a
@@ -230,11 +245,18 @@ class WorldInfoMatcher {
       pendingDelayLevels.remove(currentDelayLevel);
     }
 
-    while (recursionDepth <= maxRecursionDepth) {
+    while (recursionDepth <= recursionLimit) {
       final isRecursionPass = recursionDepth != 0;
       final newMatches = <WorldInfoMatch>[];
       for (final entry in entries) {
         if (processedIds.contains(entry.id)) continue;
+        final book = worldbooks[entry.worldbookId];
+        if (isRecursionPass &&
+            book != null &&
+            (!book.recursiveScanning ||
+                recursionDepth > book.maxRecursionDepth)) {
+          continue;
+        }
         // "Non-recursable": refuses to be activated *by another entry*. A direct
         // hit on the user's own text still counts, which is why this is scoped to
         // recursion passes only.
@@ -248,8 +270,14 @@ class WorldInfoMatcher {
         }
         final matchedKey = _matchedPrimaryKey(
           entry: entry,
-          mergedContext: currentContext,
-          context: context,
+          scopedContext: [
+            scanText[entry.id]!,
+            if (entry.runtimePolicy.targeting.scanSources.isEmpty ||
+                entry.runtimePolicy.targeting.scanSources.contains(
+                  WorldInfoScanSource.history,
+                ))
+              ...cascade,
+          ].join('\n'),
           characterId: characterId,
           characterTags: characterTags,
           generationTrigger: generationTrigger,
@@ -272,7 +300,8 @@ class WorldInfoMatcher {
       for (final match in newMatches) {
         processedIds.add(match.entry.id);
         allMatched.add(match);
-        if (!match.entry.preventRecursion) {
+        if (!match.entry.preventRecursion &&
+            (worldbooks[match.entry.worldbookId]?.allowEntryCascade ?? true)) {
           cascadeText.add(match.entry.content);
         }
       }
@@ -283,7 +312,7 @@ class WorldInfoMatcher {
         // still queued, so a lone delayed entry with nothing to trigger it stays
         // silent instead of quietly firing anyway.
         final nextLevel = pendingDelayLevels.firstOrNull;
-        if (nextLevel == null || recursionDepth >= maxRecursionDepth) break;
+        if (nextLevel == null || recursionDepth >= recursionLimit) break;
         pendingDelayLevels.remove(nextLevel);
         currentDelayLevel = nextLevel;
         // Delayed entries only activate inside a recursion pass, so make sure the
@@ -292,7 +321,7 @@ class WorldInfoMatcher {
         continue;
       }
 
-      currentContext = '$currentContext\n${cascadeText.join('\n')}';
+      cascade.addAll(cascadeText);
       recursionDepth++;
     }
 
@@ -305,6 +334,7 @@ class WorldInfoMatcher {
         generationTrigger: generationTrigger,
         processedIds: processedIds,
         recall: recall,
+        scanText: scanText,
       ),
     );
 
@@ -365,6 +395,7 @@ class WorldInfoMatcher {
     required String? generationTrigger,
     required Set<String> processedIds,
     required WorldInfoRecallOptions recall,
+    required Map<String, String> scanText,
   }) {
     if (recall.maxCandidates <= 0) return const <WorldInfoMatch>[];
 
@@ -398,11 +429,22 @@ class WorldInfoMatcher {
     };
 
     final matches = <WorldInfoMatch>[];
-    for (final hit in Bm25Ranker(tokenizer: tokenizer).rank(
-      query: context.mergedText,
-      documents: documents,
-      requireKeyOverlap: recall.requireKeyOverlap,
-    )) {
+    final ranker = Bm25Ranker(tokenizer: tokenizer);
+    final scopedHits =
+        [
+          for (final query
+              in eligible.map((entry) => scanText[entry.id]!).toSet())
+            for (final hit in ranker.rank(
+              query: query,
+              documents: documents,
+              requireKeyOverlap: recall.requireKeyOverlap,
+            ))
+              if (scanText[hit.documentId] == query) hit,
+        ]..sort((a, b) {
+          final score = b.score.compareTo(a.score);
+          return score != 0 ? score : a.documentId.compareTo(b.documentId);
+        });
+    for (final hit in scopedHits) {
       if (matches.length >= recall.maxCandidates) break;
       // sorted desc: no later hit passes
       if (hit.score < recall.minScore) break;
@@ -417,11 +459,7 @@ class WorldInfoMatcher {
       if (recall.requireKeyOverlap && hit.bestKey == null) continue;
       final entry = byId[hit.documentId];
       if (entry == null) continue;
-      final scoped = _scopedContext(
-        mergedContext: context.mergedText,
-        context: context,
-        scanSources: entry.runtimePolicy.targeting.scanSources,
-      );
+      final scoped = scanText[entry.id]!;
       final haystack = entry.caseSensitive ? scoped : scoped.toLowerCase();
       if (!_satisfiesSecondaryKeys(entry: entry, haystack: haystack)) continue;
       processedIds.add(entry.id);
@@ -454,8 +492,7 @@ class WorldInfoMatcher {
   /// would risk the two passes disagreeing.
   String? _matchedPrimaryKey({
     required WorldInfoEntry entry,
-    required String mergedContext,
-    required WorldInfoMatchContext context,
+    required String scopedContext,
     required String characterId,
     required List<String> characterTags,
     required String? generationTrigger,
@@ -466,11 +503,6 @@ class WorldInfoMatcher {
     if (!entry.shouldTriggerByProbability()) return null;
     if (entry.keys.isEmpty) return null;
 
-    final scopedContext = _scopedContext(
-      mergedContext: mergedContext,
-      context: context,
-      scanSources: entry.runtimePolicy.targeting.scanSources,
-    );
     final haystack = entry.caseSensitive
         ? scopedContext
         : scopedContext.toLowerCase();
@@ -604,16 +636,5 @@ class WorldInfoMatcher {
         (unit >= 0x3400 && unit <= 0x4DBF) ||
         (unit >= 0xF900 && unit <= 0xFAFF) ||
         (unit >= 0x3040 && unit <= 0x30FF);
-  }
-
-  String _scopedContext({
-    required String mergedContext,
-    required WorldInfoMatchContext context,
-    required List<WorldInfoScanSource> scanSources,
-  }) {
-    if (scanSources.isEmpty) {
-      return mergedContext;
-    }
-    return context.scopedText(scanSources);
   }
 }
