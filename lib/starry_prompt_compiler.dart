@@ -31,6 +31,7 @@ export 'src/models/prompt_profile.dart';
 export 'src/models/regex_profile.dart';
 export 'src/models/regex_script.dart';
 export 'src/models/session_prompt_context.dart';
+export 'src/models/skill_document.dart';
 export 'src/models/variable_set.dart';
 export 'src/models/world_info.dart';
 export 'src/models/worldbook_entities.dart';
