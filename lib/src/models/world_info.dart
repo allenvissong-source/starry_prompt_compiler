@@ -321,12 +321,15 @@ class WorldInfoEntry {
              output: WorldInfoOutputPolicy(outlet: outletName),
            );
 
+  /// [runtimeId] lets an assembler identify this occurrence across libraries
+  /// without changing the canonical stored entry.
   factory WorldInfoEntry.fromCanonicalEntry(
-    starry_worldbook.WorldbookEntry entry,
-  ) {
+    starry_worldbook.WorldbookEntry entry, {
+    String? runtimeId,
+  }) {
     final policy = WorldInfoRuntimePolicy.fromEntryExtensions(entry.extensions);
     return WorldInfoEntry(
-      id: entry.id,
+      id: runtimeId ?? entry.id,
       worldbookId: entry.worldbookId,
       keys: entry.keys,
       secondaryKeys: entry.secondaryKeys,
