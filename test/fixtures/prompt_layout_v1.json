@@ -1,0 +1,18 @@
+{
+  "history": [
+    {"role":"user","slot_id":"u1","content":"u1"},
+    {"role":"assistant","slot_id":"a1","content":"a1-call","calls":[{"call_id":"read-result","name":"read_file","arguments":{"path":"guide.txt"}}]},
+    {"role":"tool","slot_id":"a1","call_id":"read-result","ok":true,"output":{"title":"found"}},
+    {"role":"assistant","slot_id":"a1","content":"a1-final","calls":[]},
+    {"role":"user","slot_id":"u2","content":"u2"},
+    {"role":"assistant","slot_id":"a2","content":"a2","calls":[]}
+  ],
+  "cases": [
+    {"name":"ordinary_slots","depth":2,"retained_start":0,"order":["e-char","u1","a1-call","read-result","a1-final","e-world-1","u2","a2","e-profile","e-world-2","current"],"trace":[]},
+    {"name":"complete_tool_slot","depth":3,"retained_start":0,"order":["e-char","u1","e-world-1","a1-call","read-result","a1-final","u2","a2","e-profile","e-world-2","current"],"trace":[]},
+    {"name":"current_zero","depth":0,"retained_start":0,"order":["e-char","u1","a1-call","read-result","a1-final","u2","a2","e-world-1","e-profile","e-world-2","current"],"trace":[]},
+    {"name":"depth_overflow","depth":99,"retained_start":0,"order":["e-char","e-world-1","u1","a1-call","read-result","a1-final","u2","a2","e-profile","e-world-2","current"],"trace":[]},
+    {"name":"removed_anchor","depth":3,"retained_start":4,"order":["e-char","checkpoint","e-world-1","u2","a2","e-profile","e-world-2","current"],"trace":["anchor_relocated_after_compaction"]},
+    {"name":"retained_anchor","depth":2,"retained_start":4,"order":["e-char","checkpoint","e-world-1","u2","a2","e-profile","e-world-2","current"],"trace":[]}
+  ]
+}

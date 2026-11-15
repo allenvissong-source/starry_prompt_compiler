@@ -1,0 +1,19 @@
+{
+  "estimator_id": "starry_ascii4_unicode1_image16384_v1",
+  "message_overhead": 4,
+  "cases": [
+    {"text": "", "text_tokens": 0, "message_tokens": 4},
+    {"text": "hello", "text_tokens": 2, "message_tokens": 6},
+    {"text": "你好😀", "text_tokens": 3, "message_tokens": 7},
+    {"text": "ab中😀", "text_tokens": 3, "message_tokens": 7},
+    {"text": "é", "text_tokens": 2, "message_tokens": 6},
+    {"text": "\n\t", "text_tokens": 1, "message_tokens": 5}
+  ],
+  "budget_cases": [
+    {"context_tokens": 101, "output_reserve_tokens": 11, "protocol_reserve_tokens": 6, "input_limit": 84, "auto_trigger": 75, "soft_target": 60},
+    {"context_tokens": 1000, "output_reserve_tokens": 100, "protocol_reserve_tokens": 50, "input_limit": 850, "auto_trigger": 765, "soft_target": 612}
+  ],
+  "digest_cases": [
+    {"value": "hello", "digest": "dcdd4ba1ec7623eb"}
+  ]
+}

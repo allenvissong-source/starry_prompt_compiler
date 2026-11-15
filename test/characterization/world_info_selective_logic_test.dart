@@ -361,26 +361,13 @@ void main() {
         ),
       );
       final char = character();
-      final request = CharacterAssemblyRequest(
-        sessionId: 'session',
-        topicId: 'topic',
-        characterId: char.id,
-        history: const <CharacterHistoryMessage>[],
-        pendingUserInput: const CharacterPendingUserInput(text: 'alpha'),
-      );
-      final context = ResolvedPromptContext(
-        character: char,
-        worldInfoEntries: <WorldInfoEntry>[entry],
-        groupedWorldInfoEntries: <WorldInfoPosition, List<WorldInfoEntry>>{
-          WorldInfoPosition.before: <WorldInfoEntry>[entry],
-        },
-        resolvedPromptBlocks: const <PromptBlock>[],
-        promptContext: const SessionPromptContext(),
-        resolvedVariables: const <String, dynamic>{},
-      );
-      final plan = const PromptExecutionPlanner().buildPlan(
-        request: request,
-        resolvedContext: context,
+      final plan = const PromptExecutionPlanner().buildDomainPlan(
+        DomainPromptPlanningInput(
+          character: char,
+          worldInfoEntries: <WorldInfoEntry>[entry],
+          promptBlocks: const <PromptBlock>[],
+          promptContext: const SessionPromptContext(),
+        ),
       );
       return <ResolvedExecutionUnit>[
         ...plan.shellSequence,

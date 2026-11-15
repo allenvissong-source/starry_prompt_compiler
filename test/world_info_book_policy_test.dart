@@ -1,6 +1,28 @@
 import 'package:starry_prompt_compiler/starry_prompt_compiler.dart';
 import 'package:test/test.dart';
 
+void _testStoredOutlets() {
+  test(
+    'saved editor outlet reaches runtime and respects explicit output policy',
+    () {
+      final stored = <String, dynamic>{
+        'st_extra': {'outlet_name': 'scene'},
+      };
+      expect(
+        WorldInfoRuntimePolicy.fromEntryExtensions(stored).output.outlet,
+        'scene',
+      );
+      expect(
+        WorldInfoRuntimePolicy.fromEntryExtensions({
+          ...stored,
+          'outputPolicy': {'outlet': 'explicit'},
+        }).output.outlet,
+        'explicit',
+      );
+    },
+  );
+}
+
 Worldbook book(
   String id, {
   int scanDepth = 1,
@@ -104,15 +126,69 @@ ResolvedExecutionUnit unit(
   ignoreBudget: ignoreBudget,
 );
 
-Set<String> retained(PromptExecutionPlan plan) => {
-  ...plan.shellSequence.map((unit) => unit.id),
-  ...plan.outletMap.values.expand((units) => units.map((unit) => unit.id)),
-  ...plan.historySplicePoints.expand(
-    (point) => point.units.map((unit) => unit.id),
-  ),
-};
+CompiledPromptPlan admit(
+  PromptExecutionPlan plan, {
+  Map<String, int> bookBudgets = const {},
+  int available = 100,
+}) {
+  final units = [
+    ...plan.shellSequence,
+    ...plan.outletMap.values.expand((u) => u),
+    ...plan.historySplicePoints.expand((p) => p.units),
+  ].where((u) => u.sourceKind != ExecutionSourceKind.marker).toList();
+  final candidates = const DomainPromptCompiler().prepareCandidates(
+    compilationId: 'book-policy',
+    executionPlan: plan,
+    sourceSnapshots: [
+      for (final id in units.map((u) => u.sourceRef).toSet())
+        PromptSourceSnapshot(
+          key: id,
+          locator: 'fixture:$id',
+          resourceId: id,
+          revision: '1',
+          contentHash: promptDigest(id),
+        ),
+    ],
+    inputSnapshot: const PromptInputSnapshot(
+      canonicalInputDigest: 'input',
+      scanHistoryDigest: 'history',
+      variablesDigest: 'variables',
+      environmentDigest: 'environment',
+    ),
+    speakerRef: const PromptSpeakerRef(kind: PromptSpeakerKind.assistant),
+    unitSnapshotKeys: {for (final u in units) u.id: u.sourceRef},
+    transformer: PromptContentTransformer(
+      macroService: MacroService(
+        const MacroContext(),
+        clock: FrozenClock(DateTime.utc(2026)),
+        random: SeededRandomSource(0),
+      ),
+      chatId: 'topic',
+    ),
+    currentInput: '',
+    historyTransformDigest: 'transform',
+  );
+  return const DomainPromptCompiler().admitCandidates(
+    candidates,
+    PromptAdmissionBudget(
+      candidateDigest: candidates.digest,
+      budgetSnapshotDigest: 'budget',
+      layoutHistoryDigest: 'layout',
+      inputLimit: 1000,
+      worldbookAvailableTokens: available,
+      emissionCosts: {for (final e in candidates.emissions) e.emissionId: 5},
+      admittedNonWorldbookUnitIds: const [],
+      fixedContextCost: 0,
+      protectedHistoryCost: 0,
+      nonWorldbookPromptCost: 0,
+    ),
+    worldInfoPolicy: plan.worldInfoBudgetPlan,
+    worldbookTokenBudgets: bookBudgets,
+  );
+}
 
 void main() {
+  _testStoredOutlets();
   test('book depth and entry overrides limit both keywords and recall', () {
     final found = match(
       [
@@ -243,7 +319,20 @@ void main() {
 
   test('book budgets apply across shell, outlets and history splice', () {
     final plan = PromptExecutionPlan(
-      shellSequence: [unit('first', 'a'), unit('other', 'b')],
+      shellSequence: [
+        unit('first', 'a'),
+        unit('other', 'b'),
+        const ResolvedExecutionUnit(
+          id: 'memory-marker',
+          sourceKind: ExecutionSourceKind.marker,
+          sourceRef: 'memory',
+          enabled: true,
+          contentTemplate: '',
+          role: 'system',
+          markerId: 'memory',
+          insertionMode: ExecutionInsertionMode.replaceMarker,
+        ),
+      ],
       outletMap: {
         'memory': [
           unit('outlet', 'a', order: 1, mode: ExecutionInsertionMode.outlet),
@@ -260,22 +349,23 @@ void main() {
       ],
       disabledUnits: const [],
     );
-    final result = const WorldInfoBudgetAdmissionService().admitWorldInfoUnits(
-      plan,
-      worldbookTokenBudgets: {'a': 5},
-    );
-    expect(retained(result.plan), {'first', 'other', 'ignored'});
-    expect(result.plan.outletMap, isEmpty);
+    final result = admit(plan, bookBudgets: {'a': 5});
+    expect(result.selectedUnits.map((u) => u.unitId).toSet(), {
+      'first',
+      'other',
+      'ignored',
+    });
+    expect(result.emissions.any((e) => e.unitId == 'outlet'), isFalse);
     expect(
-      result.trace
-          .where((trace) => trace.decision == RetainDecision.dropOverSubBudget)
+      result.admissionTrace
+          .where((trace) => trace.reason == 'world_info_budget_exceeded')
           .map((trace) => trace.unitId),
       ['outlet', 'splice'],
     );
   });
 
   test('global and book budgets are both enforced with existing priority', () {
-    final result = const WorldInfoBudgetAdmissionService().admitWorldInfoUnits(
+    final result = admit(
       PromptExecutionPlan(
         shellSequence: [
           unit('a', 'a'),
@@ -285,11 +375,11 @@ void main() {
         outletMap: const {},
         historySplicePoints: const [],
         disabledUnits: const [],
-        budgetPlan: const MessageBudgetPlan(availableInputTokens: 40),
         worldInfoBudgetPlan: const WorldInfoBudgetPlan(enabled: true),
       ),
-      worldbookTokenBudgets: {'a': 0, 'b': 5},
+      bookBudgets: {'a': 0, 'b': 5},
+      available: 40,
     );
-    expect(retained(result.plan), {'b', 'c'});
+    expect(result.selectedUnits.map((u) => u.unitId).toSet(), {'b', 'c'});
   });
 }

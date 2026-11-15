@@ -7,7 +7,7 @@
 // SUT=package.
 //
 // Included symbols (only what the 5 in-scope services and
-// character_assembly_models actually reference):
+// resolved_prompt_context actually reference):
 //   - enum TurnMessageRole
 //   - class TurnMessage
 //

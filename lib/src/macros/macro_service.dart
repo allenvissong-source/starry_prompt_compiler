@@ -1,33 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// Ports-ified copy of `lib/features/chat_character/domain/services/macro_service.dart`.
-//
-// Behavioral parity with the Starry-side original is enforced by the
-// characterization test `test/features/prompt_compiler/macro_service_characterization_test.dart`,
-// which is scheduled to run under both `SUT=starry` and `SUT=package`.
-//
-// Changes vs the source of truth are limited to *non-determinism removal*:
-//
-//   * `Random _random = Random()`         → `RandomSource _random` injected via ctor
-//   * `DateTime.now()`                     → `Clock _clock` injected via ctor
-//   * `debugPrint` / `kDebugMode`          → not used in this service (nothing to strip)
-//   * hard-coded default locale in `intl`  → `LocaleTag _locale` injected, passed to every
-//                                            locale-sensitive `DateFormat` call so tests are
-//                                            not implicitly dependent on `Intl.systemLocale`
-//   * `MacroContext.fromData` idle-duration also routes through the injected `Clock`
-//   * `_generateUuid()` no longer allocates a local `Random()`; it reuses the injected source
-//
-// All macro tokens, regex patterns, matching order, capture-group semantics,
-// truthy/falsy rules, and factory field-defaulting behavior are byte-identical
-// to the Starry-side original.
-//
-// Imports are rewritten to in-package relative paths; `dart:math` is dropped in
-// favor of the `RandomSource` port; `package:intl/intl.dart` is retained
-// because it is an approved dependency in `pubspec.yaml`.
+// Domain macro implementation. Hosts inject the clock, random source and locale
+// to reproduce a frozen compilation environment.
 
 import 'package:intl/intl.dart';
 
-import '../models/character_assembly_models.dart';
+import '../models/resolved_prompt_context.dart';
 import '../models/character_entities.dart';
 import '../models/conversation_turns_models.dart';
 import '../models/persona.dart';

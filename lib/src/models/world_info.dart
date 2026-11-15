@@ -12,6 +12,7 @@
 // names are byte-identical to the Starry source.
 
 import 'worldbook_entities.dart' as starry_worldbook;
+import 'compiled_prompt_plan.dart';
 
 enum WorldInfoPosition {
   before,
@@ -162,6 +163,7 @@ class WorldInfoRuntimePolicy {
     final budgetPolicy = _map(extensions['budgetPolicy']);
     final targetingPolicy = _map(extensions['targetingPolicy']);
     final outputPolicy = _map(extensions['outputPolicy']);
+    final editorFields = _map(extensions['st_extra']);
     return WorldInfoRuntimePolicy(
       activation: WorldInfoActivationPolicy(
         generationTriggers: _stringList(
@@ -182,7 +184,9 @@ class WorldInfoRuntimePolicy {
       ),
       output: WorldInfoOutputPolicy(
         outlet: _normalizedOrNull(
-          outputPolicy['outlet'] ?? extensions['outletName'],
+          outputPolicy['outlet'] ??
+              editorFields['outlet_name'] ??
+              extensions['outletName'],
         ),
       ),
     );
@@ -322,12 +326,14 @@ class WorldInfoEntry {
            );
 
   factory WorldInfoEntry.fromCanonicalEntry(
-    starry_worldbook.WorldbookEntry entry,
-  ) {
+    starry_worldbook.WorldbookEntry entry, {
+    String? sourceEntryId,
+    String? sourceWorldbookId,
+  }) {
     final policy = WorldInfoRuntimePolicy.fromEntryExtensions(entry.extensions);
     return WorldInfoEntry(
-      id: entry.id,
-      worldbookId: entry.worldbookId,
+      id: sourceEntryId ?? entry.id,
+      worldbookId: sourceWorldbookId ?? entry.worldbookId,
       keys: entry.keys,
       secondaryKeys: entry.secondaryKeys,
       content: entry.content,
@@ -491,6 +497,8 @@ class WorldInfoResolution {
     required this.candidateWorldInfoIds,
     required this.contextText,
     this.worldbookTokenBudgets = const <String, int>{},
+    this.sourceWorldbooks = const [],
+    this.matchingTrace = const [],
   });
 
   final List<WorldInfoEntry> entries;
@@ -498,6 +506,8 @@ class WorldInfoResolution {
   final List<String> candidateWorldInfoIds;
   final String contextText;
   final Map<String, int> worldbookTokenBudgets;
+  final List<starry_worldbook.Worldbook> sourceWorldbooks;
+  final List<PromptCompilationTrace> matchingTrace;
 }
 
 Map<String, dynamic> _map(dynamic raw) {

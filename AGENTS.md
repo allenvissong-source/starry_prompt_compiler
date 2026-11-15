@@ -1,8 +1,8 @@
 # AGENTS.md — starry_prompt_compiler
 
-Starry 的提示词编译核心。**纯 Dart,宿主无关**:无 Flutter、无 Riverpod、无 I/O、
-无数据库。所有关于"这一轮该注入什么、按什么顺序、占多少预算"的决策都在这里,
-上层(主应用、注入服务)只负责提供输入和消费结果。
+Starry 的领域提示词编译核心。**纯 Dart,宿主无关**:无 Flutter、无 Riverpod、无 I/O、
+无数据库。领域匹配、覆盖、展开、位置约束和世界书子预算准入在这里；
+执行宿主提供统一成本及额度，并决定最终消息、全局预算与历史窗口。
 
 本包是依赖链的最底层:
 
@@ -15,25 +15,24 @@ starry_prompt_compiler          ← 本包,不依赖任何兄弟仓
 
 ## 1. 架构边界
 
-**三段式装配是主路径**:`buildPlan`(`planner/prompt_execution_planner.dart:20`)
-→ `admitWorldInfoUnits`(`worldinfo/world_info_budget_admission.dart:24`)
-→ `buildFromExecutionPlan`(`assembler/character_message_assembler_pure.dart:71`)。
-新增能力要落进这三步中的某一步,不要在旁边另开一条装配路径。
+领域主路径是 `buildDomainPlan` → `prepareCandidates` → 宿主计费 →
+`admitCandidates`。候选正文仅展开一次，准入消费冻结结果，不回放宏。
+普通 Assistant 不要求假造 Character。所有宿主均使用同一 planner 和 compiler；
+不得绕过筛选、覆盖和位置决策，手工生成另一份执行计划。
 
-主应用走完整三段(`starry/lib/features/chat_character/
-presentation/providers/character_message_assembler_provider.dart:83/89/108`)。
+`/v1/injections:resolve` 是扁平外部注入宿主，明确使用 `flatInjections`、
+`literalInjectionText` 和 `injectionAllowance`；保留裸正文、外部注入额度及
+原 UTF-16 成本口径，位置、展开和最终总预算由调用它的宿主负责。
+Starry 完整模型链默认使用 contextual／expanded／required 策略，不使用这些
+外部端点策略。默认必选内容超限必须报错，不得把外部份额策略用于模型链。
 
-**已知的生产旁路**:`starry_injection_service/lib/src/application/
-injection_resolver.dart:400-418` 手工构造 `PromptExecutionPlan`,跳过 `buildPlan`
-直接调 `admitWorldInfoUnits`,也不调 `buildFromExecutionPlan`。
+`starry_prompt_compiler.dart` 提供领域入口。
+`starry_prompt_standalone.dart` 提供独立 Dart 宿主的完整装配、成本及历史策略。
+Starry 的生产调用不得使用 standalone 装配器；最终消息由 Rust Host 物化。
+独立示例：`dart run example/standalone.dart` 和 `dart run example/character.dart`。
 
-这是刻意的架构分工(注入服务只返回扁平 entries,位置由宿主决定),但要清楚它的
-代价:`buildPlan` 并非纯组装,还含 `_filterUnits` 的四道筛选门(`:318-371`)、
-`_applyOverrides` 的 persona override 决策(`:378-526`)、
-`_buildShellSequence`(`:528`)、`_buildOutletMap`(`:584`)与
-`_buildHistorySplicePoints`(`:659`)共用的四个排序比较器(`:867`/`:878`/`:911`/`:927`;
-另有 `_comparePromptBlocks`@`:1246` 不在此链路)。**绕过它就没有这些决策** ——
-改动这些方法时,注入服务那条路径不会自动跟上。
+领域 API 不接受最终装配请求、附件路径或宿主全局裁剪计划；有效行为测试直接驱动
+领域编译和明确选择的宿主装配器，禁止为测试恢复生产兼容接口。
 
 - **匹配、排序、预算准入只有一份实现**。`MacroService` / `RegexService` /
   `WorldInfoMatcher` 是各自领域的唯一真源;上层不得重新实现,只能调用。
@@ -65,7 +64,7 @@ dart test
 dart format --set-exit-if-changed .
 ```
 
-三条当前全绿(analyze 无 issue、177 用例全过、40 文件 0 changed；前提是本仓的 format 改动已提交)。
+验证以实际命令结果为准，不以历史测试数量代替当前检查。
 
 注意本机与 CI 是**同一个 Dart**:主仓四个 workflow 都钉 `flutter-version: 3.44.4`,
 它捆绑 Dart 3.12.2,与本机一致。所以本地格式化的结果与 CI 环境一致,不会

@@ -1,0 +1,60 @@
+{
+  "candidates": {
+    "schema_digest": "caf3d551c976084c",
+    "compiler_contract": "domain_prompt_v1",
+    "compilation_id": "operation-fixture",
+    "source_snapshots": [
+      {"key": "character-snapshot", "locator": "library:characters", "resource_id": "starry", "revision": "7", "content_hash": "character-hash"},
+      {"key": "worldbook-snapshot", "locator": "library:worldbooks", "resource_id": "north-guide", "revision": "3", "content_hash": "worldbook-hash"},
+      {"key": "profile-snapshot", "locator": "library:profiles", "resource_id": "concise", "revision": "2", "content_hash": "profile-hash"}
+    ],
+    "input_snapshot": {
+      "canonical_input_digest": "input-fixture",
+      "scan_history_digest": "scan-fixture",
+      "variables_digest": "variables-fixture",
+      "environment_digest": "environment-fixture"
+    },
+    "speaker_ref": {"kind": "character", "resource_id": "starry", "snapshot_key": "character-snapshot"},
+    "units": [
+      {"unit_id": "char-core", "source_kind": "character_core", "source_resource_id": "starry", "source_snapshot_key": "character-snapshot", "semantic_kind": "identity", "role": "system", "expanded_text": "你是星璃。", "retention": "required", "budget_tier": "mandatory", "ignore_worldbook_budget": false, "injection_order": 0, "source_order": 0},
+      {"unit_id": "world-entry", "source_kind": "world_info_entry", "source_resource_id": "north-guide", "source_snapshot_key": "worldbook-snapshot", "semantic_kind": "knowledge", "role": "user", "expanded_text": "展馆在北边。", "retention": "optional", "budget_tier": "normal", "worldbook_id": "north-guide", "ignore_worldbook_budget": false, "injection_order": 10, "source_order": 1},
+      {"unit_id": "profile", "source_kind": "prompt_block", "source_resource_id": "concise", "source_snapshot_key": "profile-snapshot", "semantic_kind": "instruction", "role": "assistant", "expanded_text": "Speak briefly.", "retention": "optional", "budget_tier": "high", "ignore_worldbook_budget": false, "injection_order": 0, "source_order": 2}
+    ],
+    "emissions": [
+      {"emission_id": "e-char", "unit_id": "char-core", "placement": "before_history", "sequence": 0},
+      {"emission_id": "e-world-1", "unit_id": "world-entry", "placement": "at_depth", "sequence": 1, "depth": 2, "outlet_name": "guide"},
+      {"emission_id": "e-world-2", "unit_id": "world-entry", "placement": "after_history", "sequence": 2, "outlet_name": "guide"},
+      {"emission_id": "e-profile", "unit_id": "profile", "placement": "tail", "sequence": 3}
+    ],
+    "transformed_input": "带我去展馆。",
+    "history_transform_digest": "history-transform-fixture",
+    "trace": []
+  },
+  "candidate_digest": "d6a28297c18b33dc",
+  "budget_snapshot": {
+    "context_window": 1000,
+    "reserved_output": 100,
+    "protocol_margin": 50,
+    "estimator_id": "starry_ascii4_unicode1_image16384_v1",
+    "input_limit": 850,
+    "auto_trigger": 765,
+    "soft_target": 612,
+    "provenance": {"source": "profile", "model_config_revision": "fixture"}
+  },
+  "admission": {
+    "schema_digest": "caf3d551c976084c",
+    "candidate_digest": "d6a28297c18b33dc",
+    "budget_snapshot_digest": "b0c7f1a7b921653b",
+    "layout_history_digest": "layout-fixture",
+    "input_limit": 850,
+    "worldbook_available_tokens": 743,
+    "emission_costs": {"e-char": 9, "e-world-1": 10, "e-world-2": 10, "e-profile": 8},
+    "admitted_non_worldbook_unit_ids": ["char-core", "profile"],
+    "fixed_context_cost": 50,
+    "non_worldbook_prompt_cost": 17,
+    "protected_history_cost": 40,
+    "requires_compaction": false,
+    "trace": [],
+    "costs_digest": "8fc34bc65b56a514"
+  }
+}

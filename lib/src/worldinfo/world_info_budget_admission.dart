@@ -1,242 +1,170 @@
-﻿// Package-internal service: WorldInfoBudgetAdmissionService.
-//
-// Provenance: verbatim copy of
-//   lib/features/chat_character/domain/services/world_info_budget_admission.dart
-// Imports rewritten to relative in-package model paths (2 rewrites).
-// Class / method / field names byte-identical to the Starry source.
-// The `const` ctor takes no Ports (Admission is already pure).
-import '../models/message_budget_models.dart';
+import '../models/prompt_budget_diagnostics.dart';
 import '../models/prompt_execution_models.dart';
+import '../models/compiled_prompt_plan.dart';
+import '../models/prompt_admission_budget.dart';
 
-class WorldInfoBudgetAdmissionResult {
-  const WorldInfoBudgetAdmissionResult({
-    required this.plan,
-    required this.trace,
-  });
-
-  final PromptExecutionPlan plan;
-  final List<CroppingTrace> trace;
-}
+/// External injection allowances use allocation tiers rather than requiring
+/// a complete model context. The model host must enforce its final budget.
+enum WorldInfoAdmissionMode { requiredContext, injectionAllowance }
 
 class WorldInfoBudgetAdmissionService {
   const WorldInfoBudgetAdmissionService();
 
-  WorldInfoBudgetAdmissionResult admitWorldInfoUnits(
-    PromptExecutionPlan plan, {
-    Map<String, int> worldbookTokenBudgets = const <String, int>{},
+  CompiledPromptPlan admitCandidates(
+    PreparedPromptCandidates candidates,
+    PromptAdmissionBudget budget, {
+    WorldInfoBudgetPlan worldInfoPolicy = const WorldInfoBudgetPlan(),
+    Map<String, int> worldbookTokenBudgets = const {},
+    WorldInfoAdmissionMode mode = WorldInfoAdmissionMode.requiredContext,
   }) {
-    final wiBudget = plan.worldInfoBudgetPlan.resolveBudgetTokens(
-      plan.budgetPlan.resolvedAvailableInputTokens,
-    );
-    if (wiBudget == null && worldbookTokenBudgets.isEmpty) {
-      return WorldInfoBudgetAdmissionResult(
-        plan: plan,
-        trace: const <CroppingTrace>[],
+    final costs = budget.validateFor(candidates);
+    final enforceRequired = mode == WorldInfoAdmissionMode.requiredContext;
+    if (!enforceRequired &&
+        candidates.units.any((u) => u.worldbookId == null)) {
+      throw FormatException('prompt_plan.injection_requires_worldbook_units');
+    }
+    if (worldInfoPolicy.percent < 0 ||
+        !worldInfoPolicy.percent.isFinite ||
+        worldInfoPolicy.minTokens < 0 ||
+        (worldInfoPolicy.capTokens ?? 0) < 0 ||
+        worldbookTokenBudgets.values.any((cost) => cost < 0)) {
+      throw FormatException('prompt_plan.invalid_worldbook_budget');
+    }
+    final policyLimit = worldInfoPolicy.resolveBudgetTokens(budget.inputLimit);
+    var globalRemaining = budget.worldbookAvailableTokens;
+    var policyRemaining = policyLimit;
+    final bookRemaining = Map<String, int>.from(worldbookTokenBudgets);
+    final selected = budget.admittedNonWorldbookUnitIds.toSet();
+    final trace = <PromptCompilationTrace>[
+      ...candidates.trace,
+      ...budget.trace,
+    ];
+    final worldbookUnits =
+        candidates.units.where((u) => u.worldbookId != null).toList()..sort(
+          (a, b) =>
+              _compareCompiledPriority(a, b, enforceRequired: enforceRequired),
+        );
+
+    void decide(CompiledPromptUnit unit, bool retained, String reason) {
+      if (retained) selected.add(unit.unitId);
+      trace.add(
+        PromptCompilationTrace(
+          unitId: unit.unitId,
+          stage: 'budget',
+          reason: reason,
+          sourceResourceId: unit.sourceResourceId,
+        ),
       );
     }
 
-    final wiUnits = <ResolvedExecutionUnit>[
-      ...plan.shellSequence.where(
-        (unit) => unit.sourceKind == ExecutionSourceKind.worldInfoEntry,
-      ),
-      ...plan.outletMap.values.expand(
-        (units) => units.where(
-          (unit) => unit.sourceKind == ExecutionSourceKind.worldInfoEntry,
-        ),
-      ),
-      ...plan.historySplicePoints.expand(
-        (point) => point.units.where(
-          (unit) => unit.sourceKind == ExecutionSourceKind.worldInfoEntry,
-        ),
-      ),
-    ]..sort(_compareWorldInfoBudgetPriority);
-
-    var remaining = wiBudget;
-    final bookRemaining = <String, int>{
-      for (final entry in worldbookTokenBudgets.entries)
-        entry.key: entry.value < 0 ? 0 : entry.value,
-    };
-    final trace = <CroppingTrace>[];
-    final retainedWorldInfoIds = <String>{};
-    for (final unit in wiUnits) {
-      final bookBudget = bookRemaining[unit.sourceRef];
-      final limit = remaining == null
-          ? bookBudget
-          : bookBudget == null || remaining < bookBudget
-          ? remaining
-          : bookBudget;
-      final decision = _admitWorldInfoUnit(unit, remainingBudget: limit);
-      trace.addAll(decision.trace);
-      if (decision.retained) {
-        retainedWorldInfoIds.add(unit.id);
-        if (!unit.ignoreBudget) {
-          if (remaining != null) {
-            remaining = (remaining - decision.estimatedTokens).clamp(
-              0,
-              remaining,
-            );
-          }
-          if (bookBudget != null) {
-            bookRemaining[unit.sourceRef] =
-                (bookBudget - decision.estimatedTokens).clamp(0, bookBudget);
-          }
+    // Required and ignoreBudget content is globally charged before optional
+    // lore. ignoreBudget bypasses only the book/policy sublimit.
+    for (final unit in worldbookUnits.where(
+      (u) =>
+          (enforceRequired && u.retention == PromptRetention.required) ||
+          u.ignoreWorldbookBudget,
+    )) {
+      final cost = costs[unit.unitId]!;
+      final bookLimit = bookRemaining[unit.worldbookId];
+      if (cost > globalRemaining ||
+          (!unit.ignoreWorldbookBudget &&
+              ((policyRemaining != null && cost > policyRemaining) ||
+                  (bookLimit != null && cost > bookLimit)))) {
+        throw PromptBudgetOverflowException(
+          code: 'context_limit',
+          trace: [
+            CroppingTrace(
+              unitId: unit.unitId,
+              stage: CroppingStage.preBudgetAdmission,
+              decision: RetainDecision.dropMandatoryOverflow,
+              reason: 'required_world_info_budget_exceeded',
+            ),
+          ],
+        );
+      }
+      globalRemaining -= cost;
+      if (!unit.ignoreWorldbookBudget) {
+        if (policyRemaining != null) policyRemaining = policyRemaining - cost;
+        if (bookLimit != null) {
+          bookRemaining[unit.worldbookId!] = bookLimit - cost;
         }
       }
+      decide(
+        unit,
+        true,
+        unit.ignoreWorldbookBudget
+            ? 'world_info_ignore_subbudget'
+            : 'required_world_info_admitted',
+      );
     }
-
-    final retainedShell = plan.shellSequence
-        .where(
-          (unit) =>
-              unit.sourceKind != ExecutionSourceKind.worldInfoEntry ||
-              retainedWorldInfoIds.contains(unit.id),
-        )
-        .toList(growable: false);
-    final retainedSplice = plan.historySplicePoints
-        .map((point) {
-          final retainedUnits = point.units
-              .where(
-                (unit) =>
-                    unit.sourceKind != ExecutionSourceKind.worldInfoEntry ||
-                    retainedWorldInfoIds.contains(unit.id),
-              )
-              .toList(growable: false);
-          if (retainedUnits.isEmpty) {
-            return null;
-          }
-          return HistorySplicePoint(
-            offsetFromEnd: point.offsetFromEnd,
-            units: retainedUnits,
-          );
-        })
-        .whereType<HistorySplicePoint>()
-        .toList(growable: false);
-    final retainedOutletMap = <String, List<ResolvedExecutionUnit>>{
-      for (final entry in plan.outletMap.entries)
-        entry.key: entry.value
-            .where(
-              (unit) =>
-                  unit.sourceKind != ExecutionSourceKind.worldInfoEntry ||
-                  retainedWorldInfoIds.contains(unit.id),
-            )
-            .toList(growable: false),
-    }..removeWhere((key, value) => value.isEmpty);
-
-    return WorldInfoBudgetAdmissionResult(
-      plan: plan.copyWith(
-        shellSequence: retainedShell,
-        historySplicePoints: retainedSplice,
-        outletMap: retainedOutletMap,
-        croppingTrace: <CroppingTrace>[...plan.croppingTrace, ...trace],
-      ),
-      trace: List<CroppingTrace>.unmodifiable(trace),
+    for (final unit in worldbookUnits.where(
+      (u) =>
+          (!enforceRequired || u.retention != PromptRetention.required) &&
+          !u.ignoreWorldbookBudget,
+    )) {
+      final cost = costs[unit.unitId]!;
+      final bookLimit = bookRemaining[unit.worldbookId];
+      final retained =
+          cost <= globalRemaining &&
+          (policyRemaining == null || cost <= policyRemaining) &&
+          (bookLimit == null || cost <= bookLimit);
+      if (retained) {
+        globalRemaining -= cost;
+        if (policyRemaining != null) policyRemaining = policyRemaining - cost;
+        if (bookLimit != null) {
+          bookRemaining[unit.worldbookId!] = bookLimit - cost;
+        }
+      }
+      decide(
+        unit,
+        retained,
+        retained ? 'world_info_budget_admitted' : 'world_info_budget_exceeded',
+      );
+    }
+    return CompiledPromptPlan(
+      candidateDigest: candidates.digest,
+      sourceSnapshots: candidates.sourceSnapshots,
+      speakerRef: candidates.speakerRef,
+      selectedUnits: candidates.units
+          .where((u) => selected.contains(u.unitId))
+          .toList(),
+      emissions: candidates.emissions
+          .where((e) => selected.contains(e.unitId))
+          .toList(),
+      budgetSnapshotDigest: budget.budgetSnapshotDigest,
+      costsDigest: budget.costsDigest,
+      layoutHistoryDigest: budget.layoutHistoryDigest,
+      requiresCompaction: budget.requiresCompaction,
+      admissionTrace: trace,
     );
   }
 
-  ({bool retained, int estimatedTokens, List<CroppingTrace> trace})
-  _admitWorldInfoUnit(
-    ResolvedExecutionUnit unit, {
-    required int? remainingBudget,
+  int _compareCompiledPriority(
+    CompiledPromptUnit a,
+    CompiledPromptUnit b, {
+    required bool enforceRequired,
   }) {
-    if (unit.sourceKind != ExecutionSourceKind.worldInfoEntry) {
-      return (
-        retained: true,
-        estimatedTokens: 0,
-        trace: const <CroppingTrace>[],
-      );
-    }
-
-    final estimated = _estimateTextTokens(unit.contentTemplate);
-    if (unit.ignoreBudget) {
-      return (
-        retained: true,
-        estimatedTokens: estimated,
-        trace: <CroppingTrace>[
-          CroppingTrace(
-            unitId: unit.id,
-            stage: CroppingStage.preBudgetAdmission,
-            decision: RetainDecision.retain,
-            reason: 'world_info_ignore_budget',
-          ),
-        ],
-      );
-    }
-    if (remainingBudget == null || estimated <= remainingBudget) {
-      return (
-        retained: true,
-        estimatedTokens: estimated,
-        trace: <CroppingTrace>[
-          CroppingTrace(
-            unitId: unit.id,
-            stage: CroppingStage.preBudgetAdmission,
-            decision: RetainDecision.retain,
-            reason: 'world_info_budget_admitted',
-          ),
-        ],
-      );
-    }
-    return (
-      retained: false,
-      estimatedTokens: estimated,
-      trace: <CroppingTrace>[
-        CroppingTrace(
-          unitId: unit.id,
-          stage: CroppingStage.preBudgetAdmission,
-          decision: RetainDecision.dropOverSubBudget,
-          reason: 'world_info_budget_exceeded',
-        ),
-      ],
-    );
-  }
-
-  int _compareWorldInfoBudgetPriority(
-    ResolvedExecutionUnit a,
-    ResolvedExecutionUnit b,
-  ) {
-    final mandatoryCompare = _boolDescending(
-      a.mandatory,
-    ).compareTo(_boolDescending(b.mandatory));
-    if (mandatoryCompare != 0) {
-      return mandatoryCompare;
-    }
-    final ignoreCompare = _boolDescending(
-      a.ignoreBudget,
-    ).compareTo(_boolDescending(b.ignoreBudget));
-    if (ignoreCompare != 0) {
-      return ignoreCompare;
-    }
-    final tierCompare = _tierPrecedence(
+    final mandatory = !enforceRequired
+        ? 0
+        : _boolDescending(
+            a.retention == PromptRetention.required,
+          ).compareTo(_boolDescending(b.retention == PromptRetention.required));
+    if (mandatory != 0) return mandatory;
+    final ignore = _boolDescending(
+      a.ignoreWorldbookBudget,
+    ).compareTo(_boolDescending(b.ignoreWorldbookBudget));
+    if (ignore != 0) return ignore;
+    final tier = _tierPrecedence(
       a.budgetTier,
     ).compareTo(_tierPrecedence(b.budgetTier));
-    if (tierCompare != 0) {
-      return tierCompare;
-    }
-    final orderCompare = a.injectionOrder.compareTo(b.injectionOrder);
-    if (orderCompare != 0) {
-      return orderCompare;
-    }
-    final sourceCompare = a.sourceOrder.compareTo(b.sourceOrder);
-    if (sourceCompare != 0) {
-      return sourceCompare;
-    }
-    return a.id.compareTo(b.id);
+    if (tier != 0) return tier;
+    final order = a.injectionOrder.compareTo(b.injectionOrder);
+    if (order != 0) return order;
+    final source = a.sourceOrder.compareTo(b.sourceOrder);
+    return source != 0 ? source : a.unitId.compareTo(b.unitId);
   }
 
   int _boolDescending(bool value) => value ? 0 : 1;
 
-  int _tierPrecedence(ExecutionBudgetTier tier) {
-    return switch (tier) {
-      ExecutionBudgetTier.mandatory => 0,
-      ExecutionBudgetTier.high => 1,
-      ExecutionBudgetTier.normal => 2,
-      ExecutionBudgetTier.low => 3,
-    };
-  }
-
-  int _estimateTextTokens(String text) {
-    final normalized = text.trim();
-    if (normalized.isEmpty) {
-      return 0;
-    }
-    return (normalized.length / 4).ceil() + 4;
-  }
+  int _tierPrecedence(ExecutionBudgetTier tier) => tier.index;
 }

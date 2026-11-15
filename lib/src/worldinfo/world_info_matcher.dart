@@ -8,7 +8,7 @@
 // host-side concerns that belong to host-side wiring).
 //
 // Imports: only `world_info.dart` — the Starry source pulled in Flutter
-// foundation, Riverpod, session_prompt_context, character_assembly_models,
+// foundation, Riverpod, session_prompt_context, resolved_prompt_context,
 // persona, starry_providers, preset_repository, resource_binding_repository,
 // worldbook_repository, character_entities exclusively for the Resolver
 // class; the Matcher itself is pure Dart over WorldInfoEntry /

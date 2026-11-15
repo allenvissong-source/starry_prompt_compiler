@@ -1,11 +1,10 @@
-/// starry_prompt_compiler — pure Dart prompt-assembly core.
+/// Pure Dart domain prompt compilation.
 ///
 /// This library is the single public entry point. Callers must not reach into
 /// `src/`; only the symbols re-exported here are considered stable.
 ///
-/// The exported surface mirrors the pure subset of Starry's on-device
-/// pipeline: models, ports, macros, regex, planner, world-info admission /
-/// matcher, budget planner, and the pure assembler facade.
+/// Host budgeting consumes frozen candidates. Complete Dart assembly is
+/// exported separately by starry_prompt_standalone.dart.
 library;
 
 // Ports.
@@ -16,11 +15,14 @@ export 'src/ports/random_source.dart';
 export 'src/ports/variable_store.dart';
 
 // Models. Order kept alphabetical for readability.
-export 'src/models/character_assembly_models.dart';
+export 'src/models/resolved_prompt_context.dart';
 export 'src/models/character_entities.dart';
+export 'src/models/compiled_prompt_plan.dart';
+export 'src/models/domain_prompt_inputs.dart';
+export 'src/models/prompt_admission_budget.dart';
+export 'src/codec/prompt_plan_wire.dart' show promptDigest, canonicalPromptJson;
 export 'src/models/conversation_turns_models.dart';
-export 'src/models/message_budget_candidates.dart';
-export 'src/models/message_budget_models.dart';
+export 'src/models/prompt_budget_diagnostics.dart';
 export 'src/models/persona.dart';
 export 'src/models/prompt_execution_models.dart';
 export 'src/codec/prompt_block_legacy_wire.dart';
@@ -37,8 +39,8 @@ export 'src/models/world_info.dart';
 export 'src/models/worldbook_entities.dart';
 
 // Services.
-export 'src/assembler/character_message_assembler_pure.dart';
-export 'src/budget/message_budget_planner.dart';
+export 'src/compiler/domain_prompt_compiler.dart';
+export 'src/compiler/prompt_content_transformer.dart';
 export 'src/macros/macro_service.dart';
 export 'src/planner/prompt_execution_planner.dart';
 export 'src/regex/regex_service.dart';

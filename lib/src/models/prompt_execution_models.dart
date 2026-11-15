@@ -1,8 +1,5 @@
-// Only external dep is message_budget_models, rewritten to a relative import
 // inside this package. All class / enum / field / literal names remain
 // byte-identical to the source.
-
-import 'message_budget_models.dart';
 
 class WorldInfoBudgetPlan {
   const WorldInfoBudgetPlan({
@@ -57,6 +54,8 @@ enum ExecutionInsertionMode {
 
 enum ExecutionBudgetTier { mandatory, high, normal, low }
 
+enum PromptSemanticKind { identity, persona, knowledge, instruction, example }
+
 enum ExecutionDisableSource {
   blockConfig,
   sessionOverlay,
@@ -89,9 +88,9 @@ class ResolvedExecutionUnit {
     this.ignoreBudget = false,
     this.mandatory = false,
     this.budgetTier = ExecutionBudgetTier.normal,
-    this.dropWithMissingAnchor = false,
     this.disableSource,
     this.disableReason,
+    this.semanticKind,
   });
 
   final String id;
@@ -113,9 +112,9 @@ class ResolvedExecutionUnit {
   final bool ignoreBudget;
   final bool mandatory;
   final ExecutionBudgetTier budgetTier;
-  final bool dropWithMissingAnchor;
   final ExecutionDisableSource? disableSource;
   final String? disableReason;
+  final PromptSemanticKind? semanticKind;
 
   ResolvedExecutionUnit copyWith({
     String? id,
@@ -137,9 +136,9 @@ class ResolvedExecutionUnit {
     bool? ignoreBudget,
     bool? mandatory,
     ExecutionBudgetTier? budgetTier,
-    bool? dropWithMissingAnchor,
     ExecutionDisableSource? disableSource,
     String? disableReason,
+    PromptSemanticKind? semanticKind,
   }) {
     return ResolvedExecutionUnit(
       id: id ?? this.id,
@@ -161,10 +160,9 @@ class ResolvedExecutionUnit {
       ignoreBudget: ignoreBudget ?? this.ignoreBudget,
       mandatory: mandatory ?? this.mandatory,
       budgetTier: budgetTier ?? this.budgetTier,
-      dropWithMissingAnchor:
-          dropWithMissingAnchor ?? this.dropWithMissingAnchor,
       disableSource: disableSource ?? this.disableSource,
       disableReason: disableReason ?? this.disableReason,
+      semanticKind: semanticKind ?? this.semanticKind,
     );
   }
 }
@@ -208,7 +206,6 @@ class ExecutionTraceEntry {
     this.anchorId,
     this.outletId,
     this.insertionMode,
-    this.retentionDecision,
   });
 
   final String unitId;
@@ -221,7 +218,6 @@ class ExecutionTraceEntry {
   final String? anchorId;
   final String? outletId;
   final ExecutionInsertionMode? insertionMode;
-  final RetainDecision? retentionDecision;
 }
 
 class ExecutionOverrideDecision {
@@ -245,9 +241,7 @@ class PromptExecutionPlan {
     required List<ResolvedExecutionUnit> disabledUnits,
     Map<String, List<ResolvedExecutionUnit>> outletMap =
         const <String, List<ResolvedExecutionUnit>>{},
-    this.budgetPlan = const MessageBudgetPlan(),
     this.worldInfoBudgetPlan = const WorldInfoBudgetPlan(),
-    List<CroppingTrace> croppingTrace = const <CroppingTrace>[],
     List<ExecutionTraceEntry> trace = const <ExecutionTraceEntry>[],
   }) : shellSequence = List<ResolvedExecutionUnit>.unmodifiable(shellSequence),
        historySplicePoints = List<HistorySplicePoint>.unmodifiable(
@@ -260,16 +254,13 @@ class PromptExecutionPlan {
                MapEntry(key, List<ResolvedExecutionUnit>.unmodifiable(value)),
          ),
        ),
-       croppingTrace = List<CroppingTrace>.unmodifiable(croppingTrace),
        trace = List<ExecutionTraceEntry>.unmodifiable(trace);
 
   final List<ResolvedExecutionUnit> shellSequence;
   final List<HistorySplicePoint> historySplicePoints;
   final List<ResolvedExecutionUnit> disabledUnits;
   final Map<String, List<ResolvedExecutionUnit>> outletMap;
-  final MessageBudgetPlan budgetPlan;
   final WorldInfoBudgetPlan worldInfoBudgetPlan;
-  final List<CroppingTrace> croppingTrace;
   final List<ExecutionTraceEntry> trace;
 
   PromptExecutionPlan copyWith({
@@ -277,9 +268,7 @@ class PromptExecutionPlan {
     List<HistorySplicePoint>? historySplicePoints,
     List<ResolvedExecutionUnit>? disabledUnits,
     Map<String, List<ResolvedExecutionUnit>>? outletMap,
-    MessageBudgetPlan? budgetPlan,
     WorldInfoBudgetPlan? worldInfoBudgetPlan,
-    List<CroppingTrace>? croppingTrace,
     List<ExecutionTraceEntry>? trace,
   }) {
     return PromptExecutionPlan(
@@ -287,9 +276,7 @@ class PromptExecutionPlan {
       historySplicePoints: historySplicePoints ?? this.historySplicePoints,
       disabledUnits: disabledUnits ?? this.disabledUnits,
       outletMap: outletMap ?? this.outletMap,
-      budgetPlan: budgetPlan ?? this.budgetPlan,
       worldInfoBudgetPlan: worldInfoBudgetPlan ?? this.worldInfoBudgetPlan,
-      croppingTrace: croppingTrace ?? this.croppingTrace,
       trace: trace ?? this.trace,
     );
   }

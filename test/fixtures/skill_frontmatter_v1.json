@@ -1,0 +1,51 @@
+{
+  "contract": "skill_frontmatter_v1",
+  "cases": [
+    {
+      "id": "basic",
+      "text": "---\nname: Guide\ndescription: Useful: context\nallowed-tools: shell\n---\n\nBody: unchanged\n",
+      "name": "Guide",
+      "description": "Useful: context",
+      "body": "Body: unchanged"
+    },
+    {
+      "id": "leading_blank_crlf_case",
+      "text": "\r\n  \r\n --- \r\nNAME: First\r\nName: Last\r\nDESCRIPTION: 中文说明\r\n --- \r\n正文\r\n",
+      "name": "Last",
+      "description": "中文说明",
+      "body": "正文"
+    },
+    {
+      "id": "quoted_literal",
+      "text": "---\nname: \"Quoted\"\ndescription: 'Literal scalar'\n---\nBody",
+      "name": "\"Quoted\"",
+      "description": "'Literal scalar'",
+      "body": "Body"
+    },
+    {
+      "id": "unclosed",
+      "text": "---\nname: Guide\ndescription: Text\n",
+      "rejection": "missing_frontmatter"
+    },
+    {
+      "id": "no_frontmatter",
+      "text": "name: Guide\ndescription: Text\n",
+      "rejection": "missing_frontmatter"
+    },
+    {
+      "id": "missing_name",
+      "text": "---\ndescription: Text\n---\nBody",
+      "rejection": "missing_name"
+    },
+    {
+      "id": "missing_description",
+      "text": "---\nname: Guide\n---\nBody",
+      "rejection": "missing_description"
+    },
+    {
+      "id": "empty_last_value",
+      "text": "---\nname: Guide\ndescription: First\ndescription: \n---\nBody",
+      "rejection": "missing_description"
+    }
+  ]
+}

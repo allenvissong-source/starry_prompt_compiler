@@ -8,40 +8,33 @@
 // random, locale, or logger surface).
 import '../models/session_prompt_context.dart';
 import '../models/world_info.dart';
-import '../models/character_assembly_models.dart';
 import '../models/prompt_execution_models.dart';
 import '../models/persona.dart';
 import '../models/prompt_block.dart';
 import '../models/prompt_manager.dart';
 import '../models/character_entities.dart';
+import '../models/domain_prompt_inputs.dart';
 
 class PromptExecutionPlanner {
   const PromptExecutionPlanner();
 
-  PromptExecutionPlan buildPlan({
-    required CharacterAssemblyRequest request,
-    required ResolvedPromptContext resolvedContext,
-    String generationType = 'chat',
-  }) {
-    final units = _collectUnits(
-      request: request,
-      resolvedContext: resolvedContext,
-    );
+  PromptExecutionPlan buildDomainPlan(DomainPromptPlanningInput input) {
+    final units = _collectUnits(input);
     final filtering = _filterUnits(
       units,
-      generationType: generationType,
+      generationType: input.generationType,
       sessionOverlay: _mergeOverlay(
-        request.promptContext.sessionDisableOverlay,
-        request.sessionDisableOverlay,
+        input.promptContext.sessionDisableOverlay,
+        input.sessionDisableOverlay,
       ),
       characterOverlay: _mergeOverlay(
-        request.promptContext.characterDisableOverlay,
-        request.characterDisableOverlay,
+        input.promptContext.characterDisableOverlay,
+        input.characterDisableOverlay,
       ),
     );
     final overrideResolution = _applyOverrides(
       filtering.enabledUnits,
-      persona: resolvedContext.persona,
+      persona: input.persona,
     );
     final shellSequence = _buildShellSequence(overrideResolution.units);
     final outletValidation = _validateOutletAnchors(
@@ -59,8 +52,7 @@ class PromptExecutionPlanner {
         ...outletValidation.disabledUnits,
       ],
       outletMap: outletValidation.outletMap,
-      budgetPlan: request.budgetPlan,
-      worldInfoBudgetPlan: request.worldInfoBudgetPlan,
+      worldInfoBudgetPlan: input.worldInfoBudgetPlan,
       trace: <ExecutionTraceEntry>[
         ...filtering.trace,
         ...overrideResolution.trace,
@@ -74,29 +66,42 @@ class PromptExecutionPlanner {
     );
   }
 
-  List<ResolvedExecutionUnit> _collectUnits({
-    required CharacterAssemblyRequest request,
-    required ResolvedPromptContext resolvedContext,
-  }) {
+  List<ResolvedExecutionUnit> _collectUnits(DomainPromptPlanningInput input) {
     final units = <ResolvedExecutionUnit>[
-      ..._collectPromptBlockUnits(
-        resolvedContext.resolvedPromptBlocks,
-        resolvedContext.character,
-      ),
-      ..._collectPersonaUnits(resolvedContext.persona),
+      if (input.identityContent case final identity?)
+        ResolvedExecutionUnit(
+          id: '${identity.resourceId}:identity',
+          sourceKind: ExecutionSourceKind.characterCore,
+          sourceRef: identity.resourceId,
+          enabled: true,
+          contentTemplate: identity.text,
+          role: 'system',
+          insertionMode: ExecutionInsertionMode.beforeHistory,
+          mandatory: true,
+          budgetTier: ExecutionBudgetTier.mandatory,
+          semanticKind: PromptSemanticKind.identity,
+          locked: true,
+          forbidOverride: true,
+        ),
+      ..._collectPromptBlockUnits(input.promptBlocks, input.character),
+      ..._collectPersonaUnits(input.persona),
       ..._collectAuthorNoteUnits(
-        request.promptContext.authorNotePolicy,
-        historyLength: request.history.length,
+        input.promptContext.authorNotePolicy,
+        historyLength: input.historyLength,
       ),
-      ..._collectWorldInfoUnits(resolvedContext.worldInfoEntries),
-      ..._collectCharacterDepthPromptUnits(resolvedContext.character),
+      ..._collectWorldInfoUnits(
+        input.worldInfoEntries,
+        mode: input.worldInfoPlanningMode,
+      ),
+      if (input.character != null)
+        ..._collectCharacterDepthPromptUnits(input.character!),
     ];
     return units;
   }
 
   List<ResolvedExecutionUnit> _collectPromptBlockUnits(
     List<PromptBlock> blocks,
-    Character character,
+    Character? character,
   ) {
     final orderedBlocks = List<PromptBlock>.from(blocks)
       ..sort(_comparePromptBlocks);
@@ -140,8 +145,14 @@ class PromptExecutionPlanner {
       units.add(
         ResolvedExecutionUnit(
           id: block.id,
-          sourceKind: ExecutionSourceKind.promptBlock,
-          sourceRef: block.provenance.identifier ?? block.name,
+          sourceKind: _characterBlockContent(block, character)
+              ? ExecutionSourceKind.characterCore
+              : ExecutionSourceKind.promptBlock,
+          sourceRef: _characterBlockContent(block, character)
+              ? character!.id
+              : (block.promptProfileId ??
+                    block.provenance.identifier ??
+                    block.name),
           enabled: block.enabled,
           contentTemplate: _resolveBlockTemplate(block, character),
           role: block.role ?? 'system',
@@ -162,8 +173,18 @@ class PromptExecutionPlanner {
           generationTriggers: block.activation.generationTriggers,
           locked: block.protection.locked,
           forbidOverride: block.protection.forbidOverride,
-          mandatory: _isMandatoryPromptBlock(block),
+          mandatory:
+              _isMandatoryPromptBlock(block) ||
+              (_characterBlockContent(block, character) &&
+                  block.kindName != 'exampleMessages' &&
+                  block.kindName != 'postHistoryInstructions'),
           budgetTier: _budgetTierForBlock(block),
+          semanticKind: block.kindName == 'exampleMessages'
+              ? PromptSemanticKind.example
+              : _characterBlockContent(block, character) &&
+                    block.kindName != 'postHistoryInstructions'
+              ? PromptSemanticKind.identity
+              : PromptSemanticKind.instruction,
         ),
       );
     }
@@ -244,21 +265,27 @@ class PromptExecutionPlanner {
   }
 
   List<ResolvedExecutionUnit> _collectWorldInfoUnits(
-    List<WorldInfoEntry> entries,
-  ) {
+    List<WorldInfoEntry> entries, {
+    required WorldInfoPlanningMode mode,
+  }) {
     final units = <ResolvedExecutionUnit>[];
     for (var index = 0; index < entries.length; index++) {
       final entry = entries[index];
-      final insertionMode = switch (entry.position) {
-        WorldInfoPosition.before => ExecutionInsertionMode.relativeBefore,
-        WorldInfoPosition.atDepth => ExecutionInsertionMode.historySplice,
-        WorldInfoPosition.anTop => ExecutionInsertionMode.authorNoteTop,
-        WorldInfoPosition.anBottom => ExecutionInsertionMode.authorNoteBottom,
-        WorldInfoPosition.outlet => ExecutionInsertionMode.outlet,
-        WorldInfoPosition.emTop => ExecutionInsertionMode.relativeBefore,
-        WorldInfoPosition.emBottom => ExecutionInsertionMode.relativeAfter,
-        WorldInfoPosition.after => ExecutionInsertionMode.relativeAfter,
-      };
+      final flat = mode == WorldInfoPlanningMode.flatInjections;
+      final insertionMode = flat
+          ? ExecutionInsertionMode.beforeHistory
+          : switch (entry.position) {
+              WorldInfoPosition.before => ExecutionInsertionMode.relativeBefore,
+              WorldInfoPosition.atDepth => ExecutionInsertionMode.historySplice,
+              WorldInfoPosition.anTop => ExecutionInsertionMode.authorNoteTop,
+              WorldInfoPosition.anBottom =>
+                ExecutionInsertionMode.authorNoteBottom,
+              WorldInfoPosition.outlet => ExecutionInsertionMode.outlet,
+              WorldInfoPosition.emTop => ExecutionInsertionMode.relativeBefore,
+              WorldInfoPosition.emBottom =>
+                ExecutionInsertionMode.relativeAfter,
+              WorldInfoPosition.after => ExecutionInsertionMode.relativeAfter,
+            };
 
       units.add(
         ResolvedExecutionUnit(
@@ -266,18 +293,21 @@ class PromptExecutionPlanner {
           sourceKind: ExecutionSourceKind.worldInfoEntry,
           sourceRef: entry.worldbookId,
           enabled: entry.enabled,
-          contentTemplate:
-              '[${entry.comment.isNotEmpty ? entry.comment : "World Info"}]\n${entry.content}',
-          role: _worldInfoRole(entry.role),
+          contentTemplate: flat
+              ? entry.content
+              : '[${entry.comment.isNotEmpty ? entry.comment : "World Info"}]\n${entry.content}',
+          role: flat ? 'system' : _worldInfoRole(entry.role),
           insertionMode: insertionMode,
           sourceOrder: 1200 + index,
-          hasExplicitAnchor: true,
-          anchorId: _anchorIdForWorldInfo(entry, insertionMode),
+          hasExplicitAnchor: !flat,
+          anchorId: flat ? null : _anchorIdForWorldInfo(entry, insertionMode),
           depth: insertionMode == ExecutionInsertionMode.historySplice
               ? entry.depth
               : null,
           injectionOrder: entry.insertionOrder,
-          generationTriggers: entry.runtimePolicy.activation.generationTriggers,
+          generationTriggers: flat
+              ? const []
+              : entry.runtimePolicy.activation.generationTriggers,
           ignoreBudget: entry.ignoreBudget,
           budgetTier: _budgetTierForWorldInfoEntry(entry),
         ),
@@ -417,7 +447,8 @@ class PromptExecutionPlanner {
   }) {
     final targetIndex = units.indexWhere(
       (unit) =>
-          unit.sourceKind == ExecutionSourceKind.promptBlock &&
+          (unit.sourceKind == ExecutionSourceKind.promptBlock ||
+              unit.sourceKind == ExecutionSourceKind.characterCore) &&
           unit.markerId == 'systemPrompt',
     );
     if (targetIndex < 0) {
@@ -438,7 +469,12 @@ class PromptExecutionPlanner {
           ),
         );
       } else {
-        units[targetIndex] = target.copyWith(contentTemplate: systemOverride);
+        units[targetIndex] = target.copyWith(
+          contentTemplate: systemOverride,
+          sourceKind: ExecutionSourceKind.persona,
+          sourceRef: persona.id,
+          semanticKind: PromptSemanticKind.instruction,
+        );
         decisions.add(
           ExecutionOverrideDecision(
             targetUnitId: target.id,
@@ -471,9 +507,27 @@ class PromptExecutionPlanner {
     }
 
     final personaContent = 'User persona:\n${persona.description.trim()}';
-    final base = target.contentTemplate.trim();
-    final merged = base.isEmpty ? personaContent : '$base\n\n$personaContent';
-    units[targetIndex] = target.copyWith(contentTemplate: merged);
+    // Persona has its own source even when its position is the system region.
+    // It must not be mislabeled as character identity or disappear with it.
+    units.insert(
+      targetIndex + 1,
+      ResolvedExecutionUnit(
+        id: 'persona:${persona.id}:inSystemPrompt',
+        sourceKind: ExecutionSourceKind.persona,
+        sourceRef: persona.id,
+        enabled: true,
+        contentTemplate: personaContent,
+        role: target.role,
+        insertionMode: ExecutionInsertionMode.relativeAfter,
+        sourceOrder: target.sourceOrder,
+        hasExplicitAnchor: true,
+        markerId: 'persona',
+        anchorId: target.markerId,
+        mandatory: target.mandatory,
+        budgetTier: target.budgetTier,
+        semanticKind: PromptSemanticKind.persona,
+      ),
+    );
     decisions.add(
       ExecutionOverrideDecision(
         targetUnitId: target.id,
@@ -496,7 +550,8 @@ class PromptExecutionPlanner {
 
     final targetIndex = units.indexWhere(
       (unit) =>
-          unit.sourceKind == ExecutionSourceKind.promptBlock &&
+          (unit.sourceKind == ExecutionSourceKind.promptBlock ||
+              unit.sourceKind == ExecutionSourceKind.characterCore) &&
           unit.markerId == 'postHistoryInstructions',
     );
     if (targetIndex < 0) {
@@ -515,7 +570,12 @@ class PromptExecutionPlanner {
       return;
     }
 
-    units[targetIndex] = target.copyWith(contentTemplate: overrideText);
+    units[targetIndex] = target.copyWith(
+      contentTemplate: overrideText,
+      sourceKind: ExecutionSourceKind.persona,
+      sourceRef: persona.id,
+      semanticKind: PromptSemanticKind.instruction,
+    );
     decisions.add(
       ExecutionOverrideDecision(
         targetUnitId: target.id,
@@ -861,7 +921,9 @@ class PromptExecutionPlanner {
     if (unit.sourceKind == ExecutionSourceKind.marker) {
       return true;
     }
-    return unit.sourceKind == ExecutionSourceKind.promptBlock &&
+    return (unit.sourceKind == ExecutionSourceKind.promptBlock ||
+            unit.sourceKind == ExecutionSourceKind.characterCore ||
+            unit.sourceKind == ExecutionSourceKind.persona) &&
         !unit.hasExplicitAnchor;
   }
 
@@ -1004,10 +1066,11 @@ class PromptExecutionPlanner {
     return ExecutionInsertionMode.relativeBefore;
   }
 
-  String _resolveBlockTemplate(PromptBlock block, Character character) {
+  String _resolveBlockTemplate(PromptBlock block, Character? character) {
     if (block.content.isNotEmpty) {
       return block.content;
     }
+    if (character == null) return '';
     return switch (block.kindName) {
       'systemPrompt' =>
         character.systemPrompt.isNotEmpty
@@ -1035,6 +1098,19 @@ class PromptExecutionPlanner {
               ),
       'nsfw' => PromptSection.getDefaultContent(PromptSectionType.nsfw),
       _ => '',
+    };
+  }
+
+  bool _characterBlockContent(PromptBlock block, Character? character) {
+    if (character == null || block.content.isNotEmpty) return false;
+    return switch (block.kindName) {
+      'systemPrompt' => character.systemPrompt.isNotEmpty,
+      'characterDescription' => character.description.isNotEmpty,
+      'characterPersonality' => character.personality.isNotEmpty,
+      'characterScenario' => character.scenario.isNotEmpty,
+      'exampleMessages' => character.exampleMessages.isNotEmpty,
+      'postHistoryInstructions' => character.postHistoryInstructions.isNotEmpty,
+      _ => false,
     };
   }
 
