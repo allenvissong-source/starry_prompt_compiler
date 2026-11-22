@@ -838,12 +838,8 @@ class PromptManagerPreset {
 
   /// Import from the shareable export format.
   ///
-  /// Import-only by design: the matching writer was removed once it turned out
-  /// nothing ever produced this shape, so the app reads presets shared from
-  /// elsewhere without claiming to emit them. Reads `sections` and tolerates a
-  /// missing `createdAt`; the `version` / `format` keys older files carry are
-  /// ignored rather than validated, because there is no second version to
-  /// distinguish.
+  /// Reads `sections` and accepts a missing `createdAt`.
+  /// Extra metadata such as `version` and `format` is ignored.
   factory PromptManagerPreset.fromExportJson(
     Map<String, dynamic> json,
     String id,
