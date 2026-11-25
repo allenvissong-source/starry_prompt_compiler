@@ -137,9 +137,15 @@ class WorldInfoBudgetPolicy {
 class WorldInfoTargetingPolicy {
   const WorldInfoTargetingPolicy({
     this.scanSources = const <WorldInfoScanSource>[],
+    this.requiredTermGroups = const <List<String>>[],
   });
 
   final List<WorldInfoScanSource> scanSources;
+
+  /// For keyed activation, at least one literal term from each group must
+  /// appear in the same sentence of the scoped scan text. Terms within a
+  /// group are alternatives; different groups are cumulative.
+  final List<List<String>> requiredTermGroups;
 }
 
 class WorldInfoOutputPolicy {
@@ -181,6 +187,7 @@ class WorldInfoRuntimePolicy {
         scanSources: _scanSourceList(
           targetingPolicy['scanSources'] ?? extensions['scanSources'],
         ),
+        requiredTermGroups: _termGroups(targetingPolicy['requiredTermGroups']),
       ),
       output: WorldInfoOutputPolicy(
         outlet: _normalizedOrNull(
@@ -525,6 +532,23 @@ List<String> _stringList(dynamic raw) {
       .map((item) => item.toString().trim())
       .where((item) => item.isNotEmpty)
       .toList(growable: false);
+}
+
+List<List<String>> _termGroups(Object? raw) {
+  if (raw is! List) return const [];
+  return List.unmodifiable(
+    raw
+        .whereType<List<Object?>>()
+        .map((group) {
+          return List<String>.unmodifiable(
+            group
+                .whereType<String>()
+                .map((term) => term.trim())
+                .where((term) => term.isNotEmpty),
+          );
+        })
+        .where((group) => group.isNotEmpty),
+  );
 }
 
 List<WorldInfoScanSource> _scanSourceList(dynamic raw) {

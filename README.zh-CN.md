@@ -39,6 +39,11 @@
 `literalInjectionText`、`injectionAllowance`：保留裸正文与外部注入份额契约，
 位置及最终模型预算由调用它的宿主负责。Starry 聊天不使用这些端点策略。
 
+世界书条目的 `extensions.targetingPolicy.requiredTermGroups` 可声明多组字面词。
+启用后，关键词匹配和词汇召回都要求扫描范围内的同一句至少命中每组中的一个词；
+句末标点、分号和换行会分句，逗号不会。词项沿用条目的大小写和整词规则。
+这是额外的准入条件，不替代原词表，也不限制常驻条目。
+
 ## 可运行示例
 
 [普通 Assistant](example/standalone.dart) 与[角色上下文](example/character.dart)

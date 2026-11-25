@@ -43,6 +43,15 @@ The `/v1/injections:resolve` external host uses the explicit `flatInjections`,
 and its external allocation contract; the caller owns placement and final model
 budgeting. These policies are not used by Starry chat.
 
+An entry can set `extensions.targetingPolicy.requiredTermGroups` (a list of
+lists of literal strings). A keyed match, whether literal or ranked, then
+requires at least one term from every group in a single sentence of the
+entry's scan scope. Sentence-ending punctuation, semicolons and line breaks
+separate sentences; commas do not. Entry case and whole-word settings also
+apply to these terms. The rule is additive to the existing key logic and does
+not affect always-on entries. For example, `[["Millennium"], ["engineering"]]`
+keeps a topic mention in a different sentence from borrowing the school name.
+
 ## Executable examples
 
 [Standalone assistant](example/standalone.dart) and

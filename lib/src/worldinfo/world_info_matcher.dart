@@ -143,6 +143,10 @@ class WorldInfoMatch {
 class WorldInfoMatcher {
   const WorldInfoMatcher({this.tokenizer = const BigramRecallTokenizer()});
 
+  static final _sentenceBoundary = RegExp(
+    r'[。！？!?；;\r\n\u2028\u2029]+|\.(?=\s|$)',
+  );
+
   /// How recall splits text into tokens.
   ///
   /// Defaults to [BigramRecallTokenizer]. Omitting it reproduces the previous
@@ -461,6 +465,7 @@ class WorldInfoMatcher {
       if (entry == null) continue;
       final scoped = scanText[entry.id]!;
       final haystack = entry.caseSensitive ? scoped : scoped.toLowerCase();
+      if (!_satisfiesRequiredTermGroups(entry, haystack)) continue;
       if (!_satisfiesSecondaryKeys(entry: entry, haystack: haystack)) continue;
       processedIds.add(entry.id);
       matches.add(
@@ -507,6 +512,10 @@ class WorldInfoMatcher {
         ? scopedContext
         : scopedContext.toLowerCase();
 
+    if (!entry.constant && !_satisfiesRequiredTermGroups(entry, haystack)) {
+      return null;
+    }
+
     String? matchedKey;
     for (final rawKey in entry.keys) {
       final key = rawKey.trim();
@@ -520,6 +529,21 @@ class WorldInfoMatcher {
     if (matchedKey == null) return null;
     if (!_satisfiesSecondaryKeys(entry: entry, haystack: haystack)) return null;
     return matchedKey;
+  }
+
+  bool _satisfiesRequiredTermGroups(WorldInfoEntry entry, String haystack) {
+    final groups = entry.runtimePolicy.targeting.requiredTermGroups;
+    if (groups.isEmpty) return true;
+    return haystack
+        .split(_sentenceBoundary)
+        .any(
+          (sentence) => groups.every(
+            (terms) => terms.any(
+              (term) =>
+                  _matchesKey(entry: entry, haystack: sentence, key: term),
+            ),
+          ),
+        );
   }
 
   /// Applies the entry's multi-key activation logic against its secondary keys.

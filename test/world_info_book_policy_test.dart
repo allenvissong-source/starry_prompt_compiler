@@ -58,6 +58,7 @@ WorldInfoEntry entry(
   bool preventRecursion = false,
   bool excludeRecursion = false,
   bool delayUntilRecursion = false,
+  WorldInfoRuntimePolicy? runtimePolicy,
 }) => WorldInfoEntry(
   id: id,
   worldbookId: worldbookId,
@@ -88,6 +89,7 @@ WorldInfoEntry entry(
   delay: 0,
   characterFilter: const {},
   scanSources: scanSources,
+  runtimePolicy: runtimePolicy,
 );
 
 Set<String> match(
@@ -189,6 +191,50 @@ CompiledPromptPlan admit(
 
 void main() {
   _testStoredOutlets();
+  test(
+    'required terms scope literal and ranked matches to the same sentence',
+    () {
+      final guarded = entry(
+        'engineering',
+        key: '千年的工程部',
+        content: '千年工程部门承担机械维修。',
+        runtimePolicy: WorldInfoRuntimePolicy.fromEntryExtensions({
+          'targetingPolicy': {
+            'scanSources': ['history'],
+            'requiredTermGroups': [
+              [' 千年 ', 'Millennium'],
+              ['工程部', '机械维修'],
+            ],
+          },
+        }),
+      );
+      List<WorldInfoActivationReason> reasons(List<String> messages) =>
+          const WorldInfoMatcher()
+              .findMatchingEntriesWithMetadata(
+                context: WorldInfoMatchContext(historyMessages: messages),
+                entries: [guarded],
+                characterId: 'character',
+                characterTags: const [],
+              )
+              .map((match) => match.activationReason)
+              .toList();
+
+      expect(reasons(['千年的工程部负责什么？']), [WorldInfoActivationReason.keyword]);
+      expect(reasons(['MILLENNIUM 的学校有工程部吗？']), [
+        WorldInfoActivationReason.semantic,
+      ]);
+      expect(reasons(['圣三一的工程部负责什么？阿拜多斯的科研设施呢？']), isEmpty);
+      expect(reasons(['千年。圣三一的工程部负责什么？']), isEmpty);
+      expect(reasons(['千年；工程部负责什么？']), isEmpty);
+      expect(reasons(['千年学校', '工程部负责什么？']), isEmpty);
+      expect(reasons(['千年']), isEmpty);
+      expect(reasons(['千年的。工程部']), isEmpty);
+      expect(reasons(['千年 問工程部；阿拜多斯的设施呢？']), [
+        WorldInfoActivationReason.semantic,
+      ]);
+    },
+  );
+
   test('book depth and entry overrides limit both keywords and recall', () {
     final found = match(
       [
