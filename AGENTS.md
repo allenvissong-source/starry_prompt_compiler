@@ -66,13 +66,10 @@ dart format --set-exit-if-changed .
 
 验证以实际命令结果为准，不以历史测试数量代替当前检查。
 
-注意本机与 CI 是**同一个 Dart**:主仓四个 workflow 都钉 `flutter-version: 3.44.4`,
-它捆绑 Dart 3.12.2,与本机一致。所以本地格式化的结果与 CI 环境一致,不会
-反复横跳。但 **CI 目前不检查这四个兄弟包的格式**(workflow 里没有任何
-`dart format` 步骤,兄弟包只被 checkout 到 `__siblings/` 供 `pub get` 解析),
-格式回潮不会被自动拦住,提交前自己跑。
+使用满足锁文件约束的 SDK。GitHub Actions 已停用；
+分析、测试与格式检查均在本地完成，不触发付费 CI。
 
-改动影响上层时,回主工程 `D:\Starry-1.07\starry` 跑
+改动影响上层时，回同级主工程 `starry` 跑
 `flutter analyze` 与 `flutter test`——本包全绿不代表上层能编译。
 
 ## 5. 约定
@@ -80,4 +77,4 @@ dart format --set-exit-if-changed .
 - 不写墓碑注释("这里删了 X / 待清理"),版本历史可追溯。
 - 不为假想的未来场景预埋兼容层、fallback 或双轨逻辑。
 - 判断"零调用"时先分清:**生产写入** / 仅测试读取 / 真零引用。三者处置不同。
-- 不在工作区根目录 `D:\Starry-1.07` 下创建任何文件,规则见根目录 `AGENTS.md`。
+- 临时产物放系统临时目录，正式交付遵守工作区 `AGENTS.md`。
