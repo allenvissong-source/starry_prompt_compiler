@@ -296,7 +296,7 @@ class PromptExecutionPlanner {
           contentTemplate: flat
               ? entry.content
               : '[${entry.comment.isNotEmpty ? entry.comment : "World Info"}]\n${entry.content}',
-          role: flat ? 'system' : _worldInfoRole(entry.role),
+          role: flat ? 'system' : entry.messageRole,
           insertionMode: insertionMode,
           sourceOrder: 1200 + index,
           hasExplicitAnchor: !flat,
@@ -1212,14 +1212,6 @@ class PromptExecutionPlanner {
       return entryOutlet;
     }
     return 'worldInfo';
-  }
-
-  String _worldInfoRole(int role) {
-    return switch (role) {
-      1 => 'assistant',
-      2 => 'user',
-      _ => 'system',
-    };
   }
 
   String? _defaultMarkerForBlock(String kind) {

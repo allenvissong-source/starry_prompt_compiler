@@ -209,6 +209,7 @@ class WorldInfoMatchContext {
   const WorldInfoMatchContext({
     this.history = '',
     this.historyMessages,
+    this.defaultScanSources = WorldInfoScanSource.values,
     this.personaDescription = '',
     this.characterDescription = '',
     this.characterPersonality = '',
@@ -223,6 +224,7 @@ class WorldInfoMatchContext {
   /// Ordered message text, including the pending user message. A flattened
   /// external context may omit this when it has no message boundaries.
   final List<String>? historyMessages;
+  final List<WorldInfoScanSource> defaultScanSources;
   final String personaDescription;
   final String characterDescription;
   final String characterPersonality;
@@ -237,9 +239,7 @@ class WorldInfoMatchContext {
     List<WorldInfoScanSource> sources = const [],
     int? historyDepth,
   ]) {
-    final scopedSources = sources.isEmpty
-        ? WorldInfoScanSource.values
-        : sources;
+    final scopedSources = sources.isEmpty ? defaultScanSources : sources;
     final buffer = StringBuffer();
     for (final source in scopedSources) {
       final messages = historyMessages;
@@ -436,6 +436,11 @@ class WorldInfoEntry {
   /// Null inherits the book's depth; zero scans no history messages.
   final int? scanDepth;
   final int role;
+  String get messageRole => switch (role) {
+    1 => 'assistant',
+    2 => 'user',
+    _ => 'system',
+  };
   final int sticky;
   final int cooldown;
   final int delay;
