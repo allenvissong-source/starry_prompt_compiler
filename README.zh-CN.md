@@ -20,6 +20,8 @@ dart run example/character.dart
 
 应用自行组装消息时使用 [`starry_prompt_compiler.dart`](lib/starry_prompt_compiler.dart)；需要库组装消息、为历史记录分配预算时，使用 [`starry_prompt_standalone.dart`](lib/starry_prompt_standalone.dart)。
 
+上层 Starry 包通过固定 Git 提交依赖本仓库。更新依赖时，按 compiler → entities → codec → service 的顺序发布；依赖发布后更新下游 Git ref，最后更新插件的 `core-source.json`。
+
 ## 许可证
 
 [Apache 2.0](LICENSE)

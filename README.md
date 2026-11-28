@@ -20,6 +20,8 @@ The [standalone example](example/standalone.dart) assembles messages for a gener
 
 Use [`starry_prompt_compiler.dart`](lib/starry_prompt_compiler.dart) if your application assembles its own messages, or [`starry_prompt_standalone.dart`](lib/starry_prompt_standalone.dart) for message assembly and history budgeting.
 
+Downstream Starry packages pin this repository by Git commit. Publish dependency updates in order: compiler → entities → codec → service. Update each downstream Git ref after its dependency is published, then update the plugin's `core-source.json`.
+
 ## License
 
 [Apache 2.0](LICENSE)
